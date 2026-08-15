@@ -77,6 +77,11 @@ sourcing_intel_cli_project/
     ├── typed_datas.py                 # TypedDict: ProductDict, SupplierDict (contrat scraper -> DB)
     ├── engine_and_database.py          # Connexion DB, add_suppliers_to_db, add_products_to_db
     ├── data_quality.py                  # Agent de qualité déterministe (voir section dédiée)
+    ├── demo_data.py                      # generate_demo_data() : dataset synthétique déterministe
+    │                                       (seed=42), même forme qu'un vrai scrape, passe par le
+    │                                       même pipeline run_quality_checks/add_*_to_db — sert de
+    │                                       repli quand le scraping live échoue (site restructuré,
+    │                                       plus de crédits proxy, pas de réseau)
     ├── scrape_from_disk.py               # PageParser: HTML brut -> ProductDict/SupplierDict
     ├── html_to_disk.py                    # Extraction JSON depuis le HTML scrapé (json_hunter)
     ├── utils_scrapping.py                  # Parsing de champs spécifiques (prix, certifications, etc.)
@@ -105,7 +110,10 @@ pratique), `min_price`, `max_price`, `product_score`, `review_count`,
 ## Flux de données (bout en bout)
 
 1. `proxies_providers.py` scrape des pages HTML brutes → sauvegardées sur
-   disque via `html_to_disk.write_to_disk`
+   disque via `html_to_disk.write_to_disk`, dans `scraped_pages/<mots-clés>/`
+   (dossier dérivé de `app.py` : `f"scraped_pages/{keywords.strip().replace(' ', '_')}"`).
+   Tout `scraped_pages/` est gitignored en bloc, donc peu importe les
+   mots-clés recherchés, aucun HTML scrapé ne finit committé par erreur
 2. `scrape_from_disk.PageParser` relit ces fichiers HTML, extrait le JSON
    embarqué (`html_to_disk.json_hunter`), et produit des listes de
    `SupplierDict` / `ProductDict`

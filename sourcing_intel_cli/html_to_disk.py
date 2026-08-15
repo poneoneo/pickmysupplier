@@ -57,7 +57,7 @@ def _create_folder(folder_name: str):
 	:rtype: Path object
 	"""
 	logger.info(f"Create folder with {folder_name} as name if not exists yet ...")
-	Path(folder_name).mkdir(exist_ok=True)
+	Path(folder_name).mkdir(parents=True, exist_ok=True)
 	return Path(folder_name)
 
 

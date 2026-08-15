@@ -1,0 +1,16 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+indent-width = 4
+
+[tool.ruff.lint]
+# E101 (tabs/spaces) and I001 (import sort) are excluded on purpose: this
+# codebase uses tab indentation intentionally (see CLAUDE.md), which trips
+# those two checks without indicating a real bug.
+select = ["E", "F"]
+ignore = ["E101", "E501"]
+
+[tool.ruff.format]
+indent-style = "tab"

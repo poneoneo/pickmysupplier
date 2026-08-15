@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 📦 Installation des dépendances...
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: 🔍 Linting...
+        id: lint
+        run: |
+          if python -m ruff check .; then
+            echo "✅ Lint OK"
+            echo "status=✅" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ Lint a échoué"
+            echo "status=❌" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: 🧪 Lancement des tests...
+        id: tests
+        if: always()
+        run: |
+          if python -m pytest --cov=sourcing_intel_cli --cov-report=term-missing --cov-report=json -q; then
+            echo "✅ Tous les tests sont passés !"
+            echo "status=✅" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ Des tests ont échoué"
+            echo "status=❌" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: 📊 Coverage
+        id: coverage
+        if: always()
+        run: |
+          PCT=$(python -c "import json; print(json.load(open('coverage.json'))['totals']['percent_covered_display'])" 2>/dev/null || echo "N/A")
+          echo "pct=${PCT}%" >> "$GITHUB_OUTPUT"
+
+      - name: 📝 Résumé
+        if: always()
+        run: |
+          {
+            echo "## 📊 Résumé CI"
+            echo ""
+            echo "| Étape | Statut |"
+            echo "|----------|--------|"
+            echo "| 🔍 Lint | ${{ steps.lint.outputs.status || '❌' }} |"
+            echo "| 🧪 Tests | ${{ steps.tests.outputs.status || '❌' }} |"
+            echo "| 📈 Coverage | ${{ steps.coverage.outputs.pct || 'N/A' }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

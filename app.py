@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from loguru import logger
 from sqlmodel import SQLModel
 
 from sourcing_intel_cli.data_quality import (
@@ -138,7 +139,7 @@ with st.sidebar:
 			"brightdata": BrightDataProxyProvider,
 			"scrapingbee": ScrapingBeeProxyProvider,
 		}[provider_name]
-		save_in_folder = keywords.strip().replace(" ", "_")
+		save_in_folder = f"scraped_pages/{keywords.strip().replace(' ', '_')}"
 
 		with st.spinner("Scraping en cours (peut prendre plusieurs minutes)..."):
 			try:
@@ -245,9 +246,17 @@ else:
 				except RuntimeError as e:
 					st.error(str(e))
 					st.stop()
-				result = df.chat(  # type: ignore
-					f"{query} return the result as a dataframe with only relevant columns."
-				)
+				try:
+					result = df.chat(  # type: ignore
+						f"{query} return the result as a dataframe with only relevant columns."
+					)
+				except Exception:  # noqa: BLE001
+					logger.exception("Natural-language search failed")
+					st.error(
+						"La recherche a échoué. Réessaie avec une autre formulation, "
+						"ou réessaie plus tard si le problème persiste."
+					)
+					st.stop()
 			if result is None:
 				st.warning("Aucun résultat pour cette question.")
 			else:

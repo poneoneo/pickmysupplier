@@ -3,3 +3,9 @@ __pycache__/
 *.pyc
 *.sqlite
 data_quality_report.json
+scraped_pages/
+.venv/
+.pytest_cache/
+.coverage
+coverage.json
+htmlcov/
