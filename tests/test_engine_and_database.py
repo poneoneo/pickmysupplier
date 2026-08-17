@@ -7,9 +7,11 @@ natively, so this exercises the real insertion/rollback/lookup logic.
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import inspect, text
 from sqlmodel import Session, SQLModel, select
 
 from sourcing_intel_cli.engine_and_database import (
+	_ensure_product_short_name_column,
 	add_products_to_db,
 	add_suppliers_to_db,
 	create_db_engine,
@@ -97,6 +99,59 @@ class TestAddProductsToDb:
 	def test_product_with_unknown_supplier_raises(self, db_engine):
 		with pytest.raises(RuntimeError, match="no supplier named"):
 			add_products_to_db([_product(supplied_by="Ghost Co.")], engine_db=db_engine)
+
+	def test_short_name_is_stored_when_provided(self, db_engine):
+		add_suppliers_to_db([_supplier()], engine_db=db_engine)
+		add_products_to_db(
+			[{**_product(), "short_name": "Earbuds"}], engine_db=db_engine
+		)
+		with Session(db_engine) as session:
+			product = session.exec(select(Product)).first()
+		assert product.short_name == "Earbuds"
+
+	def test_missing_short_name_falls_back_to_full_name(self, db_engine):
+		add_suppliers_to_db([_supplier()], engine_db=db_engine)
+		add_products_to_db([_product(name="Wireless earbuds")], engine_db=db_engine)
+		with Session(db_engine) as session:
+			product = session.exec(select(Product)).first()
+		assert product.short_name == "Wireless earbuds"
+
+
+class TestEnsureProductShortNameColumn:
+	def test_fresh_table_from_create_all_already_has_the_column(self, db_engine):
+		inspector = inspect(db_engine)
+		columns = {col["name"] for col in inspector.get_columns("product")}
+		assert "short_name" in columns
+
+	def test_adds_missing_column_to_a_legacy_table(self):
+		engine = create_db_engine(db_url="sqlite:///:memory:")
+		# Simulate a database created before this feature existed: a
+		# `product` table with no `short_name` column.
+		with engine.connect() as conn:
+			conn.execute(text("CREATE TABLE product (id INTEGER PRIMARY KEY, name TEXT)"))
+			conn.commit()
+		inspector = inspect(engine)
+		assert "short_name" not in {col["name"] for col in inspector.get_columns("product")}
+
+		_ensure_product_short_name_column(engine)
+
+		inspector = inspect(engine)
+		assert "short_name" in {col["name"] for col in inspector.get_columns("product")}
+		engine.dispose()
+
+	def test_is_idempotent(self):
+		engine = create_db_engine(db_url="sqlite:///:memory:")
+		with engine.connect() as conn:
+			conn.execute(text("CREATE TABLE product (id INTEGER PRIMARY KEY, name TEXT)"))
+			conn.commit()
+		_ensure_product_short_name_column(engine)
+		_ensure_product_short_name_column(engine)  # must not raise on the second call
+		engine.dispose()
+
+	def test_no_op_when_product_table_does_not_exist(self):
+		engine = create_db_engine(db_url="sqlite:///:memory:")
+		_ensure_product_short_name_column(engine)  # must not raise
+		engine.dispose()
 
 
 def test_create_db_engine_defaults_to_sqlite_file_url():

@@ -3,6 +3,7 @@ from typing import TypedDict
 
 class ProductDict(TypedDict):
 	name: str
+	short_name: str
 	guaranteed_by_alibaba: bool
 	certifications: str
 	minimum_to_order: float

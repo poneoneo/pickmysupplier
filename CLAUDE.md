@@ -82,6 +82,8 @@ sourcing_intel_cli_project/
     │                                     (exécution pandas déterministe) + build_value_hints()
     ├── chart_builder.py                  # suggest_chart_type() + build_chart() : sélection de
     │                                       graphique déterministe pour les résultats de recherche NL
+    ├── product_naming.py                  # summarize_product_names() (Groq, repli déterministe
+    │                                        truncate_at_word_boundary) : noms de produits raccourcis
     ├── models.py                     # SQLModel: Product, Supplier
     ├── typed_datas.py                 # TypedDict: ProductDict, SupplierDict (contrat scraper -> DB)
     ├── engine_and_database.py          # Connexion DB, add_suppliers_to_db, add_products_to_db
@@ -108,13 +110,27 @@ dedans. Lancer avec `streamlit run app.py` depuis la racine du projet.
 **Supplier** : `name` (unique), `verification_mode`, `sopi_level` (int),
 `country_name`, `years_as_gold_supplier` (int), `supplier_service_score` (float)
 
-**Product** : `name` (unique), `alibaba_guranteed` (bool — faute
+**Product** : `name` (unique), `short_name` (nullable — voir
+`product_naming.py` ci-dessous), `alibaba_guranteed` (bool — faute
 d'orthographe conservée intentionnellement, cohérente entre le modèle et le
 code d'insertion, ne pas "corriger" sans mettre à jour partout), `certifications`,
 `minimum_to_order`, `ordered_or_sold`, `supplier_id` (FK, non-null en
 pratique), `min_price`, `max_price`, `product_score`, `review_count`,
 `review_score`, `shipping_time_score`, `is_full_promotion`,
 `is_customizable`, `is_instant_order`, `trade_product`
+
+**`short_name`** : les titres scrapés sont souvent de longues chaînes
+marketing (`product_naming.summarize_product_names`, appelé dans
+`app.py::_validate_and_insert` juste avant l'écriture en base). Résume via
+Groq (JSON mode, un seul appel batché pour tous les noms trop longs d'un
+scrape) ; si l'appel échoue ou que la réponse n'est pas fiable (manquante,
+vide, ou pas réellement plus courte que l'original), repli déterministe
+sans réseau sur `truncate_at_word_boundary` (coupe aux limites de mots,
+retire les mots de remplissage marketing). Une ligne n'est donc jamais
+perdue, seulement raccourcie. Comme `product` existait déjà avec des
+lignes réelles avant l'ajout de cette colonne, et que ce projet n'a pas
+d'outil de migration, `engine_and_database._ensure_product_short_name_column`
+fait un `ALTER TABLE` idempotent au démarrage si la colonne manque.
 
 ## Flux de données (bout en bout)
 
@@ -174,6 +190,18 @@ LOGURU_LEVEL=CRITICAL
   a ses propres primitives d'affichage : `st.success`, `st.error`, etc. —
   les utiliser plutôt que `print`/`rprint`)
 
+## Tests et CI
+
+Suite pytest (`tests/`) + `ruff` + workflow GitHub Actions (`.github/workflows/ci.yml`,
+déclenché sur push/PR vers `main`). Voir `CONTRIBUTING.md` pour la
+convention de commits/branches.
+
+**Toujours `python -m pytest` / `python -m ruff check .`, jamais `pytest`/
+`ruff` seuls** — le package n'est pas installé (pas de `pip install -e .`),
+donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
+`import sourcing_intel_cli` fonctionne. `pytest` seul échoue avec
+`ModuleNotFoundError`.
+
 ## Limitations connues (non résolues intentionnellement)
 
 - **Le scraping live et la recherche en langage naturel ont été validés
@@ -195,9 +223,6 @@ LOGURU_LEVEL=CRITICAL
 - `click` et `typer` restent importés dans `proxies_providers.py`
   uniquement pour `UsageError`/`typer.Exit` — dépendances qui pourraient
   être retirées si on nettoie les chemins d'erreur ci-dessus.
-- Pas de tests automatisés sur ce projet (contrairement à `telecom_pulse_ca`
-  qui a une suite pytest + CI GitHub Actions) — à considérer si le projet
-  gagne en maturité.
 
 ## Historique des décisions (pour éviter de revenir en arrière par erreur)
 
@@ -212,8 +237,9 @@ LOGURU_LEVEL=CRITICAL
 
 ## Prochaines étapes possibles (non commencées)
 
-- Valider le scraping réel de bout en bout (proxies, parsing, insertion)
 - Corriger les chemins d'erreur silencieux dans `proxies_providers.py`
-- Ajouter des tests (au moins sur `data_quality.py`, logique pure sans
-  dépendance réseau)
+  (`return typer.Exit(...)` → vraies exceptions)
 - Nettoyer le support MySQL mort ou le réintégrer proprement dans `app.py`
+- Commitizen (version bump + changelog automatique) et packaging pipx —
+  tous deux explicitement reportés par l'utilisateur, voir
+  `project_deferred_packaging_versioning` en mémoire

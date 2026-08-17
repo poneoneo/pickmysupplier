@@ -45,8 +45,10 @@ def _make_product(rng: random.Random, index: int, supplier_name: str) -> Product
 	min_price = round(rng.uniform(0.5, 200.0), 2)
 	max_price = round(min_price + rng.uniform(0.0, 50.0), 2)
 	category = rng.choice(_PRODUCT_CATEGORIES)
+	name = f"{category} - demo model {index:03d}"
 	return ProductDict(
-		name=f"{category} - demo model {index:03d}",
+		name=name,
+		short_name=name,  # already short — demo names never need shortening
 		guaranteed_by_alibaba=rng.random() < 0.6,
 		certifications=rng.choice(["", "CE", "CE,RoHS", "ISO9001", "FDA,CE"]),
 		minimum_to_order=float(rng.choice([1, 5, 10, 20, 50, 100])),

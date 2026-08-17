@@ -6,6 +6,7 @@ from sqlmodel import Field, SQLModel
 class Product(SQLModel, table=True):
 	id: Optional[int] = Field(default=None, primary_key=True)
 	name: str = Field(index=True, unique=True)
+	short_name: Optional[str] = None
 	alibaba_guranteed: bool
 	certifications: str
 	minimum_to_order: float

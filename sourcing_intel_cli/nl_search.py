@@ -50,7 +50,11 @@ HIGHEST values shown in ASCENDING order at the same time (e.g. "top 5 \
 suppliers by score, ascending" -> sort_by="supplier_service_score", \
 ascending=true, keep="highest", limit=5).
 - "columns" lists the fields relevant to answering the question, in display \
-order, with the field the question is really about listed first.
+order, with the field the question is really about listed first. When a \
+product is being displayed by name, prefer "short_name" over \
+"product_name" (short_name is a shorter, equally identifying version made \
+for display) — use "product_name" itself only if the question needs exact \
+text matching against it.
 - "limit" is the number of rows requested (e.g. "top 5" -> 5), or null if \
 the question doesn't ask for a specific count.
 - Filters are combined with AND. To match several values of the same \
