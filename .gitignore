@@ -9,3 +9,4 @@ scraped_pages/
 .coverage
 coverage.json
 htmlcov/
+logs/

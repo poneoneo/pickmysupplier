@@ -46,13 +46,18 @@ def _remove_dot_from_price(price_as_string: str) -> float:
 	normalization) down to a plain float — only the last dot is the real
 	decimal point, earlier ones are thousands separators.
 
+	Both `head` and `tail` are stripped of non-digit characters, not just
+	`head` — some locales glue a currency code straight onto the price with
+	no separator (e.g. Polish zloty rendered as ``"30.171.21PLN"``), which
+	would otherwise leak into `tail` and make the final `float()` call raise.
+
 	:param price_as_string: A price fragment with more than one dot.
 	:type price_as_string: str
 	:return: The parsed float, e.g. ``1234.56``.
 	:rtype: float
 	"""
 	head, _, tail = price_as_string.rpartition(".")
-	return float(re.sub(r"\D", "", head) + "." + tail)
+	return float(re.sub(r"\D", "", head) + "." + re.sub(r"\D", "", tail))
 
 
 @logger.catch(TypeError)

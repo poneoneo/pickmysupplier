@@ -104,15 +104,27 @@ class PageParser:
 		return new_divs_and_dict
 
 	def _suppliers_appender(self, offers_list: Sequence[dict], suppliers: list, divs: list[Node]):
+		"""Parse each offer into a supplier dict, skipping any offer that fails to parse.
+
+		A single malformed offer (unexpected field format, missing key) used to
+		blow up the whole scrape — now it's logged and skipped, keeping the rest,
+		consistent with `data_quality.run_quality_checks`'s "reject the row, keep
+		the batch" policy.
+		"""
 		for offer in offers_list:
-			suppliers.append({
-				"name": offer["companyName"].lower(),
-				"verified_type": suppliers_status(tags=divs, offer=offer),
-				"sopi_level": int(offer["displayStarLevel"]),
-				"country_name": country_name(country_min=offer["countryCode"]),
-				"gold_supplier_year": offer["goldSupplierYears"].split(" ")[0],
-				"supplier_service_score": safe_float(offer["supplierServiceScore"]),
-			})
+			try:
+				suppliers.append({
+					"name": offer["companyName"].lower(),
+					"verified_type": suppliers_status(tags=divs, offer=offer),
+					"sopi_level": int(offer["displayStarLevel"]),
+					"country_name": country_name(country_min=offer["countryCode"]),
+					"gold_supplier_year": offer["goldSupplierYears"].split(" ")[0],
+					"supplier_service_score": safe_float(offer["supplierServiceScore"]),
+				})
+			except (KeyError, TypeError, ValueError) as exc:
+				logger.warning(
+					f"Fournisseur ignoré (parsing échoué) : {offer.get('companyName', '?')!r} — {exc}"
+				)
 		return suppliers
 
 	def detected_suppliers(self):
@@ -145,30 +157,40 @@ class PageParser:
 		return unique_suppliers
 
 	def _produtcs_appender(self, offers_list: Sequence[dict], products: Sequence[ProductDict]):
+		"""Parse each offer into a product dict, skipping any offer that fails to parse.
+
+		A single malformed offer (e.g. a price format `get_product_price` can't
+		handle) used to blow up the whole scrape — now it's logged and skipped,
+		keeping the rest, consistent with `data_quality.run_quality_checks`'s
+		"reject the row, keep the batch" policy.
+		"""
 		for offer in offers_list:
-			products.append({
-				"name": clean_product_title(offer["title"]).lower(),
-				"max_price": get_product_price(all_price_text=offer["price"], which="max"),
-				"min_price": get_product_price(all_price_text=offer["price"], which="min"),
-				# guaranteed_by_alibaba/is_full_promotion/customizable/instant_order/
-				# trade_product have no equivalent field in the current page JSON
-				# (Alibaba's 2026 offer schema dropped halfTrust/isFullPromotion/
-				# customizable/halfTrustInstantOrder/tradeProduct). Defaulted to
-				# False rather than guessed until a real source field is found.
-				"guaranteed_by_alibaba": False,
-				"certifications": get_product_certification(offer=offer),
-				"minimum_to_order": parse_moq_text(offer["moq"]),
-				"ordered_or_sold": parse_sold_count(offer.get("soldOrder")),
-				"supplied_by": offer["companyName"].lower(),
-				"product_score": safe_float(offer["productScore"]),
-				"review_count": safe_float(offer["reviewCount"]),
-				"review_score": safe_float(offer["reviewScore"]),
-				"shipping_time_score": safe_float(offer["shippingScore"]),
-				"is_full_promotion": False,
-				"customizable": False,
-				"instant_order": False,
-				"trade_product": False,
-			})
+			try:
+				products.append({
+					"name": clean_product_title(offer["title"]).lower(),
+					"max_price": get_product_price(all_price_text=offer["price"], which="max"),
+					"min_price": get_product_price(all_price_text=offer["price"], which="min"),
+					# guaranteed_by_alibaba/is_full_promotion/customizable/instant_order/
+					# trade_product have no equivalent field in the current page JSON
+					# (Alibaba's 2026 offer schema dropped halfTrust/isFullPromotion/
+					# customizable/halfTrustInstantOrder/tradeProduct). Defaulted to
+					# False rather than guessed until a real source field is found.
+					"guaranteed_by_alibaba": False,
+					"certifications": get_product_certification(offer=offer),
+					"minimum_to_order": parse_moq_text(offer["moq"]),
+					"ordered_or_sold": parse_sold_count(offer.get("soldOrder")),
+					"supplied_by": offer["companyName"].lower(),
+					"product_score": safe_float(offer["productScore"]),
+					"review_count": safe_float(offer["reviewCount"]),
+					"review_score": safe_float(offer["reviewScore"]),
+					"shipping_time_score": safe_float(offer["shippingScore"]),
+					"is_full_promotion": False,
+					"customizable": False,
+					"instant_order": False,
+					"trade_product": False,
+				})
+			except (KeyError, TypeError, ValueError) as exc:
+				logger.warning(f"Produit ignoré (parsing échoué) : {offer.get('title', '?')!r} — {exc}")
 		return products
 
 	def detected_products(self):

@@ -10,6 +10,7 @@ managing environment variables.
 import asyncio
 import os
 import platform
+import re
 import urllib3
 
 from loguru import logger
@@ -22,6 +23,47 @@ from rich.progress import Progress, SpinnerColumn
 from . import BRIGHT_DATA_API_KEY, SCRAPINGBEE_API_KEY
 from .html_to_disk import write_to_disk
 from .proxies_utils import urls_pusher, goto_task, HTML_PAGE_RESULT
+
+# Both providers are pinned to this ISO 3166-1 alpha-2 country for every
+# request, so the target site always resolves the same currency (USD) from
+# our exit IP's geolocation — see CLAUDE.md: prices used to come back in
+# whatever currency the proxy's country uses (e.g. PLN from a Polish exit
+# node), which `utils_scrapping.get_product_price` isn't guaranteed to parse.
+TARGET_COUNTRY = "us"
+
+_BD_CDP_URL_RE = re.compile(r"^(?P<scheme>\w+://)(?P<user>[^:@]+):(?P<password>[^@]+)@(?P<rest>.+)$")
+
+
+def _with_country_targeting(cdp_url: str, country: str = TARGET_COUNTRY) -> str:
+	"""Insert BrightData's `-country-XX` flag into a Scraping Browser CDP URL.
+
+	BrightData's Scraping Browser has no separate "country" request parameter
+	— per-request geo-targeting is done by appending `-country-XX` to the
+	username portion of the CDP WebSocket URL itself (see
+	https://docs.brightdata.com/scraping-automation/scraping-browser/features/proxy-location),
+	e.g. ``wss://brd-customer-...-zone-myzone:pass@brd.superproxy.io:9222``
+	becomes ``wss://brd-customer-...-zone-myzone-country-us:pass@...``.
+
+	:param cdp_url: The raw CDP WebSocket URL from `BRIGHT_DATA_API_KEY`.
+	:type cdp_url: str
+	:param country: Two-letter ISO country code to pin the exit node to.
+	:type country: str
+	:return: The URL with `-country-{country}` appended to the username, or
+		the URL unchanged if it doesn't match the expected `scheme://user:pass@rest`
+		shape (fails open rather than raising, so an unexpected credential
+		format doesn't break scraping — it just won't be geo-pinned).
+	:rtype: str
+	"""
+	match = _BD_CDP_URL_RE.match(cdp_url)
+	if match is None:
+		return cdp_url
+	user = match.group("user")
+	if re.search(r"-country-[a-z]{2}$", user):
+		return cdp_url
+	return (
+		f"{match.group('scheme')}{user}-country-{country}:"
+		f"{match.group('password')}@{match.group('rest')}"
+	)
 
 
 class BrightDataProxyProvider:
@@ -61,7 +103,7 @@ class BrightDataProxyProvider:
 			async with async_playwright() as p:
 				logger.info("Connecting to CDP and creating the browser... ")
 				try:
-					browser = await p.chromium.connect_over_cdp(cls.BD_API_KEY)
+					browser = await p.chromium.connect_over_cdp(_with_country_targeting(cls.BD_API_KEY))
 				except urllib3.exceptions.NameResolutionError:
 					rprint("[red]check your internet connection")
 					raise RuntimeError("Check your internet connection.")
@@ -152,7 +194,7 @@ class BrightDataProxyProvider:
 			)
 			playwright = sync_playwright().start()
 			try:
-				browser = playwright.chromium.connect_over_cdp(cls.BD_API_KEY)
+				browser = playwright.chromium.connect_over_cdp(_with_country_targeting(cls.BD_API_KEY))
 			except PError as e:
 				if "exists" in e.message:
 					rprint(
@@ -244,6 +286,12 @@ class ScrapingBeeProxyProvider:
 							"api_key": cls.SB_API_KEY,
 							"url": url,
 							"render_js": "true",
+							# premium_proxy is required for country_code to take
+							# effect (ScrapingBee docs) — pricier per-request
+							# (residential vs. datacenter proxy) than the plain
+							# default, but keeps prices in a single currency.
+							"premium_proxy": "true",
+							"country_code": TARGET_COUNTRY,
 						},
 						timeout=0,
 					)

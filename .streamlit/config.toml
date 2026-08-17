@@ -1,0 +1,6 @@
+# Uncaught exceptions must never dump a Python traceback/code on the page —
+# only a generic message. Full details (type, message, traceback) still go
+# to the terminal console, and to logs/app.log via sourcing_intel_cli's
+# loguru file sink for exceptions we catch explicitly with logger.exception.
+[client]
+showErrorDetails = "none"
