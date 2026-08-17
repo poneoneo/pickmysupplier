@@ -48,6 +48,50 @@ def _resolve_scrapingbee_key(visitor_key: str | None, fallback_key: str) -> str:
 	return visitor_key or fallback_key
 
 
+class ScrapingBeeQuotaExceeded(RuntimeError):
+	"""Raised when ScrapingBee reports the API key is out of credits (HTTP 429)."""
+
+
+def _fetch_via_scrapingbee(api_request, endpoint: str, api_key: str, url: str):
+	"""Fetch one page's HTML through the ScrapingBee REST API.
+
+	Isolated from `ScrapingBeeProxyProvider.sync_scraper`'s Playwright
+	setup/teardown so the api_key-resolution and quota-detection logic can
+	be unit tested with a stubbed `api_request` (see
+	`tests/test_proxies_providers.py`) instead of needing a real browser or
+	network access.
+
+	:param api_request: A Playwright `APIRequestContext` (or a stub exposing
+		the same `.get(url, params=..., timeout=...)` -> response interface).
+	:param endpoint: The ScrapingBee REST endpoint.
+	:type endpoint: str
+	:param api_key: The resolved ScrapingBee API key (visitor's own, or the
+		owner's `.env` fallback — see `_resolve_scrapingbee_key`).
+	:type api_key: str
+	:param url: The target page URL to scrape.
+	:type url: str
+	:raises ScrapingBeeQuotaExceeded: If ScrapingBee reports HTTP 429
+		(credits exhausted).
+	:return: The response object (`.ok`, `.status`, `.text()`).
+	"""
+	response = api_request.get(
+		endpoint,
+		params={
+			"api_key": api_key,
+			"url": url,
+			"render_js": "true",
+			"premium_proxy": "true",
+			"country_code": TARGET_COUNTRY,
+		},
+		timeout=0,
+	)
+	if response.status == 429:
+		raise ScrapingBeeQuotaExceeded(
+			"La clé ScrapingBee a épuisé son quota de crédits (HTTP 429)."
+		)
+	return response
+
+
 def _with_country_targeting(cdp_url: str, country: str = TARGET_COUNTRY) -> str:
 	"""Insert BrightData's `-country-XX` flag into a Scraping Browser CDP URL.
 
