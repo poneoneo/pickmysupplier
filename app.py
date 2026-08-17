@@ -19,6 +19,7 @@ from sourcing_intel_cli.data_quality import (
 	run_quality_checks,
 	write_quality_report,
 )
+from sourcing_intel_cli.datasets import DB_PREFIX, dataset_label, discover_databases, slugify
 from sourcing_intel_cli.demo_data import generate_demo_data
 from sourcing_intel_cli.engine_and_database import (
 	add_products_to_db,
@@ -30,8 +31,6 @@ from sourcing_intel_cli.proxies_providers import BrightDataProxyProvider, Scrapi
 from sourcing_intel_cli.scrape_from_disk import PageParser
 from sourcing_intel_cli.typed_datas import ProductDict, SupplierDict
 
-DB_FILE = "sourcing_intel"  # -> sourcing_intel.sqlite
-
 st.set_page_config(page_title="Sourcing Intel", layout="wide")
 
 
@@ -40,18 +39,19 @@ st.set_page_config(page_title="Sourcing Intel", layout="wide")
 # ---------------------------------------------------------------------------
 
 
-def load_products_with_suppliers() -> pd.DataFrame:
-	"""Read products joined with suppliers from the local SQLite DB.
+def load_products_with_suppliers(db_path: Path) -> pd.DataFrame:
+	"""Read products joined with suppliers from the given SQLite DB.
 
 	Read-only: a plain SELECT via pandas, never a write path. This is what
 	backs both the charts and the natural-language search — the same
 	structural guarantee the old CSV-only ai-agent had (no direct DB access
 	from a natural-language query), just without the extra CSV export step.
 
+	:param db_path: Path to the database file to read from — one per search,
+		see `discover_databases`.
 	:return: DataFrame with one row per product, joined to its supplier. Empty
-		DataFrame if the database doesn't exist yet.
+		DataFrame if the database doesn't exist.
 	"""
-	db_path = Path(f"{DB_FILE}.sqlite")
 	if not db_path.exists():
 		return pd.DataFrame()
 
@@ -83,7 +83,7 @@ def load_products_with_suppliers() -> pd.DataFrame:
 
 
 def _validate_and_insert(
-	raw_suppliers: list[SupplierDict], raw_products: list[ProductDict]
+	raw_suppliers: list[SupplierDict], raw_products: list[ProductDict], db_name: str
 ) -> None:
 	"""Run the quality agent then write clean rows to the DB, with Streamlit feedback.
 
@@ -92,6 +92,8 @@ def _validate_and_insert(
 
 	:param raw_suppliers: Suppliers straight from the source (scraper or demo data).
 	:param raw_products: Products straight from the source (scraper or demo data).
+	:param db_name: Database name (without `.sqlite`) to write to — one per
+		search, so different searches' results never mix.
 	"""
 	with st.spinner("Validation qualité..."):
 		suppliers, products, issues = run_quality_checks(raw_suppliers, raw_products)
@@ -125,7 +127,7 @@ def _validate_and_insert(
 
 	with st.spinner("Écriture en base..."):
 		try:
-			engine = create_db_engine(db_name=DB_FILE)
+			engine = create_db_engine(db_name=db_name)
 			save_all_changes(engine_db=engine, sql_model=SQLModel)
 			add_suppliers_to_db(suppliers=suppliers, engine_db=engine)
 			add_products_to_db(products=products, engine_db=engine)
@@ -148,7 +150,8 @@ with st.sidebar:
 			"brightdata": BrightDataProxyProvider,
 			"scrapingbee": ScrapingBeeProxyProvider,
 		}[provider_name]
-		save_in_folder = f"scraped_pages/{keywords.strip().replace(' ', '_')}"
+		slug = slugify(keywords)
+		save_in_folder = f"scraped_pages/{slug}"
 
 		with st.spinner("Scraping en cours (peut prendre plusieurs minutes)..."):
 			try:
@@ -164,7 +167,7 @@ with st.sidebar:
 			raw_suppliers = page_parser.detected_suppliers()
 			raw_products = page_parser.detected_products()
 
-		_validate_and_insert(raw_suppliers, raw_products)
+		_validate_and_insert(raw_suppliers, raw_products, db_name=f"{DB_PREFIX}_{slug}")
 
 	st.divider()
 	st.caption(
@@ -173,7 +176,7 @@ with st.sidebar:
 	)
 	if st.button("Charger le jeu de données de démo"):
 		raw_suppliers, raw_products = generate_demo_data()
-		_validate_and_insert(raw_suppliers, raw_products)
+		_validate_and_insert(raw_suppliers, raw_products, db_name=f"{DB_PREFIX}_demo")
 
 
 # ---------------------------------------------------------------------------
@@ -182,11 +185,23 @@ with st.sidebar:
 
 st.title("🔍 Sourcing Intel")
 
-df = load_products_with_suppliers()
+databases = discover_databases()
 
-if df.empty:
+if not databases:
 	st.info("Aucune donnée pour l'instant — lance un scraping depuis la barre latérale.")
 else:
+	dataset_labels = {dataset_label(p): p for p in databases}
+	selected_label = st.selectbox(
+		"Jeu de données à explorer",
+		list(dataset_labels.keys()),
+		help="Chaque recherche a sa propre base — choisis laquelle explorer.",
+	)
+	df = load_products_with_suppliers(dataset_labels[selected_label])
+
+	if df.empty:
+		st.info("Ce jeu de données est vide.")
+		st.stop()
+
 	tab_search, tab_charts = st.tabs(["💬 Recherche en langage naturel", "📊 Graphiques"])
 
 	with tab_search:
