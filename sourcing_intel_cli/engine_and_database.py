@@ -10,6 +10,7 @@ from rich.progress import (
 	TextColumn,
 	TimeElapsedColumn,
 )
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlmodel import Session, SQLModel, create_engine, select  # noqa: F401
@@ -65,6 +66,29 @@ def save_all_changes(
 	except MySQLdbOperationalError as e:
 		logger.error(f"Errors has occured: {e}")
 		raise RuntimeError(f"Something went wrong an unexpected error has occured:{e}") from e
+	_ensure_product_short_name_column(engine_db)
+
+
+def _ensure_product_short_name_column(engine_db: Engine) -> None:
+	"""Add the `short_name` column to an existing `product` table if it's missing.
+
+	`create_all()` only creates tables that don't exist yet — it never
+	alters an existing table's schema. This project has no migration tool,
+	so this one-off, idempotent check covers the single column this
+	feature added after `product` rows already existed in real databases.
+
+	:param engine_db: The database engine object.
+	"""
+	inspector = inspect(engine_db)
+	if "product" not in inspector.get_table_names():
+		return
+	existing_columns = {col["name"] for col in inspector.get_columns("product")}
+	if "short_name" in existing_columns:
+		return
+	logger.info("Adding missing 'short_name' column to 'product' table ...")
+	with engine_db.connect() as conn:
+		conn.execute(text("ALTER TABLE product ADD COLUMN short_name TEXT"))
+		conn.commit()
 
 
 def add_suppliers_to_db(suppliers: Sequence[SupplierDict], engine_db: Engine):
@@ -170,6 +194,7 @@ def add_products_to_db(products: Sequence[ProductDict], engine_db: Engine):
 					session.add(
 						Product(
 							name=product["name"],
+							short_name=product.get("short_name") or product["name"],
 							alibaba_guranteed=product["guaranteed_by_alibaba"],
 							certifications=product["certifications"],
 							minimum_to_order=product["minimum_to_order"],

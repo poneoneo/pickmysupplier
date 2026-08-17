@@ -59,6 +59,7 @@ def load_products_with_suppliers() -> pd.DataFrame:
 
 	query = """
       SELECT Product.name as product_name,
+      Product.short_name as short_name,
       Product.min_price as min_price,
       Product.max_price as max_price,
       Product.product_score as product_score,
@@ -113,6 +114,14 @@ def _validate_and_insert(
 	if not suppliers and not products:
 		st.error("Tout a été rejeté, rien à insérer.")
 		st.stop()
+
+	if products:
+		with st.spinner("Résumé des noms de produits trop longs..."):
+			from sourcing_intel_cli.product_naming import summarize_product_names
+
+			short_names = summarize_product_names([p["name"] for p in products])
+			for product in products:
+				product["short_name"] = short_names[product["name"]]
 
 	with st.spinner("Écriture en base..."):
 		try:
@@ -196,7 +205,8 @@ else:
 				st.markdown(
 					"""
 					**Produit**
-					- `product_name` — nom du produit
+					- `product_name` — nom complet du produit (parfois long)
+					- `short_name` — version raccourcie, plus lisible en tableau/graphique
 					- `min_price` / `max_price` — fourchette de prix (USD)
 					- `product_score` — note du produit (sur 5)
 					- `review_count` / `review_score` — nombre d'avis et note moyenne
