@@ -9,5 +9,4 @@ loguru>=0.7
 playwright>=1.40
 selectolax>=0.3
 python-dotenv>=1.0
-datahorse>=0.1
 groq>=1.0
