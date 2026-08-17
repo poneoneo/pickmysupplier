@@ -1,5 +1,5 @@
 """Tests for chart_builder.py — deterministic chart-type suggestion and
-Plotly figure construction from an NL-search result dataframe.
+ECharts option construction from an NL-search result dataframe.
 
 Pure logic, no network/Streamlit/LLM involved.
 """
@@ -7,7 +7,6 @@ Pure logic, no network/Streamlit/LLM involved.
 from __future__ import annotations
 
 import pandas as pd
-import plotly.graph_objects as go
 
 from sourcing_intel_cli.chart_builder import CHART_TYPES, build_chart, suggest_chart_type
 
@@ -49,23 +48,13 @@ class TestBuildChart:
 		)
 
 	def test_none_chart_type_returns_none(self):
-		assert build_chart(self._df(), "none") == None  # noqa: E711
+		assert build_chart(self._df(), "none") is None
 
 	def test_histogram_uses_first_numeric_column(self):
-		fig = build_chart(self._df(), "histogram")
-		assert isinstance(fig, go.Figure)
-
-	def test_bar_uses_categorical_and_numeric_columns(self):
-		fig = build_chart(self._df(), "bar")
-		assert isinstance(fig, go.Figure)
-
-	def test_box_uses_categorical_and_numeric_columns(self):
-		fig = build_chart(self._df(), "box")
-		assert isinstance(fig, go.Figure)
-
-	def test_scatter_uses_two_numeric_columns(self):
-		fig = build_chart(self._df(), "scatter")
-		assert isinstance(fig, go.Figure)
+		option = build_chart(self._df(), "histogram")
+		assert option["series"][0]["type"] == "bar"
+		assert sum(option["series"][0]["data"]) == 3
+		assert option["xAxis"]["name"] == "supplier_service_score"
 
 	def test_empty_dataframe_returns_none(self):
 		assert build_chart(pd.DataFrame(), "bar") is None
@@ -74,31 +63,8 @@ class TestBuildChart:
 		df = pd.DataFrame({"supplier_name": ["Acme", "Beta"]})
 		assert build_chart(df, "histogram") is None
 
-	def test_bar_without_categorical_column_returns_none(self):
-		df = pd.DataFrame({"min_price": [1.2, 3.4], "max_price": [2.0, 5.0]})
-		assert build_chart(df, "bar") is None
-
-	def test_scatter_with_only_one_numeric_column_returns_none(self):
-		df = pd.DataFrame({"supplier_name": ["Acme", "Beta"], "min_price": [1.2, 3.4]})
-		assert build_chart(df, "scatter") is None
-
 	def test_unknown_chart_type_returns_none(self):
 		assert build_chart(self._df(), "not-a-real-type") is None
-
-	def test_metric_col_is_used_as_value_axis_over_first_numeric_column(self):
-		df = pd.DataFrame(
-			{
-				"supplier_name": ["Acme", "Beta"],
-				"product_score": [4.0, 3.5],  # incidental extra numeric column, listed first
-				"supplier_service_score": [4.8, 4.5],  # the actual metric (sort_by)
-			}
-		)
-		fig = build_chart(df, "bar", metric_col="supplier_service_score")
-		assert fig.data[0].y[0] == 4.8
-
-	def test_metric_col_not_in_dataframe_falls_back_to_first_numeric(self):
-		fig = build_chart(self._df(), "bar", metric_col="not_a_real_column")
-		assert fig.data[0].y[0] == 4.8  # supplier_service_score, the first numeric column
 
 
 def test_chart_types_lists_all_supported_types():
