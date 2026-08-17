@@ -94,6 +94,35 @@ def build_histogram_option(df: pd.DataFrame, numeric_col: str, title: str) -> di
 	}
 
 
+def build_bar_option(
+	df: pd.DataFrame, category_col: str, value_col: str, title: str, horizontal: bool = False
+) -> dict:
+	"""Build an ECharts bar-chart option.
+
+	:param df: The dataframe to chart.
+	:type df: pd.DataFrame
+	:param category_col: Column for the category axis.
+	:type category_col: str
+	:param value_col: Column for the value axis.
+	:type value_col: str
+	:param title: Chart title.
+	:type title: str
+	:param horizontal: If True, categories go on the y-axis and values on
+		the x-axis (used by "top N" style charts, matching the project's
+		previous `orientation="h"` Plotly bar charts).
+	:type horizontal: bool
+	:return: An ECharts `option` dict.
+	:rtype: dict
+	"""
+	category_axis = {"type": "category", "data": df[category_col].tolist(), "name": category_col}
+	value_axis = {"type": "value", "name": value_col}
+	series = [{"type": "bar", "data": df[value_col].tolist()}]
+	base = {"title": {"text": title}, "color": SERIES_COLORS, "tooltip": {}, "series": series}
+	if horizontal:
+		return {**base, "xAxis": value_axis, "yAxis": category_axis}
+	return {**base, "xAxis": category_axis, "yAxis": value_axis}
+
+
 def build_chart(
 	df: pd.DataFrame, chart_type: str, title: str = "", metric_col: str | None = None
 ) -> dict | None:
@@ -125,5 +154,10 @@ def build_chart(
 		if not numeric_cols:
 			return None
 		return build_histogram_option(df, numeric_cols[0], title)
+
+	if chart_type == "bar":
+		if not categorical_cols or not numeric_cols:
+			return None
+		return build_bar_option(df, categorical_cols[0], numeric_cols[0], title)
 
 	return None

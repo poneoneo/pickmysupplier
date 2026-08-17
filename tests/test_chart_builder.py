@@ -66,6 +66,41 @@ class TestBuildChart:
 	def test_unknown_chart_type_returns_none(self):
 		assert build_chart(self._df(), "not-a-real-type") is None
 
+	def test_bar_uses_categorical_and_numeric_columns(self):
+		option = build_chart(self._df(), "bar")
+		assert option["series"][0]["type"] == "bar"
+		assert option["xAxis"]["data"] == ["Acme", "Beta", "Gamma"]
+		assert option["series"][0]["data"] == [4.8, 4.5, 4.2]
+
+	def test_bar_without_categorical_column_returns_none(self):
+		df = pd.DataFrame({"min_price": [1.2, 3.4], "max_price": [2.0, 5.0]})
+		assert build_chart(df, "bar") is None
+
+	def test_metric_col_is_used_as_value_axis_over_first_numeric_column(self):
+		df = pd.DataFrame(
+			{
+				"supplier_name": ["Acme", "Beta"],
+				"product_score": [4.0, 3.5],
+				"supplier_service_score": [4.8, 4.5],
+			}
+		)
+		option = build_chart(df, "bar", metric_col="supplier_service_score")
+		assert option["series"][0]["data"][0] == 4.8
+
+	def test_metric_col_not_in_dataframe_falls_back_to_first_numeric(self):
+		option = build_chart(self._df(), "bar", metric_col="not_a_real_column")
+		assert option["series"][0]["data"][0] == 4.8
+
+
+class TestBuildBarOptionHorizontal:
+	def test_horizontal_swaps_axes(self):
+		from sourcing_intel_cli.chart_builder import build_bar_option
+
+		df = pd.DataFrame({"supplier_name": ["Acme", "Beta"], "supplier_service_score": [4.8, 4.5]})
+		option = build_bar_option(df, "supplier_name", "supplier_service_score", "Top", horizontal=True)
+		assert option["yAxis"]["data"] == ["Acme", "Beta"]
+		assert option["xAxis"]["name"] == "supplier_service_score"
+
 
 def test_chart_types_lists_all_supported_types():
 	assert set(CHART_TYPES) == {"none", "auto", "histogram", "bar", "box", "scatter"}
