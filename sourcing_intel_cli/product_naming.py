@@ -19,7 +19,11 @@ from loguru import logger
 
 from . import GROQ_API_KEY
 
-GROQ_MODEL = "llama-3.1-8b-instant"
+# llama-3.1-8b-instant was decommissioned by Groq (404 model_not_found);
+# openai/gpt-oss-20b is their suggested replacement for small/cheap chat
+# workloads and, unlike most other current Groq models, explicitly supports
+# JSON mode.
+GROQ_MODEL = "openai/gpt-oss-20b"
 
 DEFAULT_MAX_LENGTH = 70
 

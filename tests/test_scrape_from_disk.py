@@ -61,6 +61,52 @@ class TestDetectedProducts:
 		assert lite["certifications"] == ""
 
 
+class TestAppenderResilience:
+	"""A single malformed offer must be skipped, not take down the whole batch."""
+
+	def _good_product_offer(self):
+		return {
+			"companyName": "Shenzhen Acme Co.",
+			"title": "<span> </span>Wireless Earbuds Pro X",
+			"price": "$3.20-$5.80",
+			"moq": "Min. order: 100 pieces",
+			"soldOrder": "1,250 sold",
+			"productScore": 4.8,
+			"reviewCount": 320,
+			"reviewScore": 4.9,
+			"shippingScore": 4.6,
+			"certifications": [{"prefixIcons": [{"name": "CE"}]}],
+		}
+
+	def _good_supplier_offer(self):
+		return {
+			"companyName": "Shenzhen Acme Co.",
+			"displayStarLevel": 4,
+			"countryCode": "CN",
+			"goldSupplierYears": "5 Years",
+			"supplierServiceScore": 4.7,
+		}
+
+	def test_one_malformed_product_offer_is_skipped_not_fatal(self, parser):
+		bad_offer = self._good_product_offer() | {"title": "broken"}
+		del bad_offer["moq"]  # triggers a KeyError inside the dict comprehension
+		good_offer = self._good_product_offer()
+
+		products = parser._produtcs_appender(offers_list=[bad_offer, good_offer], products=[])
+
+		assert len(products) == 1
+		assert products[0]["name"] == "wireless earbuds pro x"
+
+	def test_one_malformed_supplier_offer_is_skipped_not_fatal(self, parser):
+		bad_offer = self._good_supplier_offer() | {"displayStarLevel": "not-a-number"}
+		good_offer = self._good_supplier_offer()
+
+		suppliers = parser._suppliers_appender(offers_list=[bad_offer, good_offer], suppliers=[], divs=[])
+
+		assert len(suppliers) == 1
+		assert suppliers[0]["name"] == "shenzhen acme co."
+
+
 def test_missing_folder_raises_type_error():
 	# _html_files_explorer is decorated with @logger.catch(FileNotFoundError),
 	# whose default reraise=False swallows the exception and returns None

@@ -42,6 +42,12 @@ class TestGetProductPrice:
 		# "$1,234.56" -> comma normalized to dot -> "1.234.56" -> collapsed to 1234.56
 		assert get_product_price("$1,234.56", which="min") == 1234.56
 
+	def test_thousands_separator_with_currency_code_glued_to_tail(self):
+		# Polish zloty rendered without a separating symbol: "30.171.21PLN"
+		# has two dots (thousands + decimal) and "PLN" stuck straight onto
+		# the decimal digits — used to raise ValueError, see CLAUDE.md.
+		assert get_product_price("30.171.21PLN", which="min") == 30171.21
+
 
 class TestIsAlibabaGuaranteed:
 	def test_false_string_is_false(self):

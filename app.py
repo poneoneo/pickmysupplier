@@ -132,7 +132,8 @@ def _validate_and_insert(
 			add_suppliers_to_db(suppliers=suppliers, engine_db=engine)
 			add_products_to_db(products=products, engine_db=engine)
 		except Exception as e:  # noqa: BLE001
-			st.error(f"L'écriture en base a échoué : {e}")
+			logger.exception("Database write failed")
+			st.error(f"L'écriture en base a échoué : {e}\n\nVoir logs/app.log pour le détail.")
 			st.stop()
 
 	st.success(f"{len(suppliers)} fournisseur(s) et {len(products)} produit(s) ajoutés.")
@@ -159,13 +160,21 @@ with st.sidebar:
 					save_in=save_in_folder, key_words=keywords, page_results=int(page_results)
 				)
 			except Exception as e:  # noqa: BLE001
-				st.error(f"Le scraping a échoué : {e}")
+				logger.exception("Scraping failed")
+				st.error(f"Le scraping a échoué : {e}\n\nVoir logs/app.log pour le détail.")
 				st.stop()
 
 		with st.spinner("Analyse des pages..."):
-			page_parser = PageParser(targeted_folder=save_in_folder)
-			raw_suppliers = page_parser.detected_suppliers()
-			raw_products = page_parser.detected_products()
+			try:
+				page_parser = PageParser(targeted_folder=save_in_folder)
+				raw_suppliers = page_parser.detected_suppliers()
+				raw_products = page_parser.detected_products()
+			except Exception:  # noqa: BLE001
+				logger.exception("Page parsing failed")
+				st.error(
+					"L'analyse des pages scrapées a échoué. Voir logs/app.log pour le détail."
+				)
+				st.stop()
 
 		_validate_and_insert(raw_suppliers, raw_products, db_name=f"{DB_PREFIX}_{slug}")
 
