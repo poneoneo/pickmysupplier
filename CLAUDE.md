@@ -48,18 +48,24 @@ pour réduire l'ambition/complexité — voir section Historique des décisions)
 - **Validation des données** : module maison déterministe (pas de LLM),
   voir section dédiée ci-dessous
 - **Interface** : Streamlit (`app.py`) — remplace l'ancien CLI Typer/Click
-- **Recherche en langage naturel** : `datahorse`, dont l'import enregistre
-  `.chat()` comme accessor pandas — s'utilise directement en `df.chat(...)`,
-  jamais via `datahorse.read(df)` (cette fonction attend un chemin de
-  fichier CSV/Excel, pas un DataFrame — retourne `None` silencieusement si
-  on lui passe autre chose). Jamais de connexion DB directe depuis une
+- **Recherche en langage naturel** : appel direct à l'API Groq
+  (`sourcing_intel_cli/nl_search.py`), **pas** de génération/exécution de
+  code arbitraire. Historique : utilisait `datahorse` (qui fait exactement
+  ça — demande à un LLM d'écrire une fonction pandas et l'`exec()`), retiré
+  après tests réels le 2026-08-15 : avec le petit modèle
+  `llama-3.1-8b-instant`, le code généré changeait à chaque appel pour la
+  même question (parfois cassé, parfois de bonnes colonnes dans le mauvais
+  ordre côté graphique). `build_query_spec()` demande à la place une petite
+  spec JSON structurée (`{"filters": [...], "sort_by", "ascending",
+  "limit", "columns"}` — via le JSON mode de Groq), et `apply_query_spec()`
+  l'exécute nous-mêmes avec pandas, de façon déterministe. `datahorse` a
+  été retiré des dépendances. Jamais de connexion DB directe depuis une
   requête utilisateur — contrainte de sécurité volontaire, voir plus bas.
-  **Important** : `datahorse` embarque en dur une clé Groq publique et le
-  modèle `llama3-8b-8192`, tous deux morts (clé révoquée, modèle
-  décommissionné par Groq mi-2025). `sourcing_intel_cli/nl_search.py`
-  patche `datahorse.core.client`/`datahorse.core.model` avec notre propre
-  `GROQ_API_KEY` et `llama-3.1-8b-instant` — appeler
-  `configure_datahorse()` avant tout `df.chat(...)`.
+  **Important** : le LLM ne voit jamais les vraies valeurs des colonnes
+  catégorielles (seulement noms/types) — `build_value_hints()` les injecte
+  dans le prompt, sinon un filtre sur `country_name` devine `"China"` alors
+  que les données stockent `"chine"` (minuscule, français — voir
+  `utils_scrapping.country_name`), et retourne silencieusement zéro ligne.
 - **Visualisation** : Plotly (`plotly.express`)
 - **Logs** : `loguru` ; **affichage terminal legacy** : `rich` (encore
   utilisé dans `proxies_providers.py` pour les messages de progression)
@@ -72,7 +78,10 @@ sourcing_intel_cli_project/
 ├── requirements.txt
 └── sourcing_intel_cli/
     ├── __init__.py                  # Charge .env : BRIGHT_DATA_API_KEY, SCRAPINGBEE_API_KEY, GROQ_API_KEY, LOGURU_LEVEL
-    ├── nl_search.py                    # configure_datahorse() : patche la clé/modèle Groq morts de datahorse
+    ├── nl_search.py                    # build_query_spec() (Groq, JSON mode) + apply_query_spec()
+    │                                     (exécution pandas déterministe) + build_value_hints()
+    ├── chart_builder.py                  # suggest_chart_type() + build_chart() : sélection de
+    │                                       graphique déterministe pour les résultats de recherche NL
     ├── models.py                     # SQLModel: Product, Supplier
     ├── typed_datas.py                 # TypedDict: ProductDict, SupplierDict (contrat scraper -> DB)
     ├── engine_and_database.py          # Connexion DB, add_suppliers_to_db, add_products_to_db
@@ -123,8 +132,9 @@ pratique), `min_price`, `max_price`, `product_score`, `review_count`,
 4. `engine_and_database.add_suppliers_to_db` / `add_products_to_db` insèrent
    les lignes propres, avec rollback + skip sur `IntegrityError` (doublon)
 5. `app.py` lit la base en lecture seule (`pandas.read_sql_query`, jamais
-   d'écriture depuis cette voie) pour les graphiques et la recherche
-   en langage naturel via `datahorse`
+   d'écriture depuis cette voie) pour les graphiques fixes et la recherche
+   en langage naturel (`nl_search.build_query_spec`/`apply_query_spec`,
+   graphique choisi par `chart_builder.build_chart`)
 
 ## Agent de qualité des données (`data_quality.py`)
 
@@ -166,10 +176,11 @@ LOGURU_LEVEL=CRITICAL
 
 ## Limitations connues (non résolues intentionnellement)
 
-- **Rien n'a été testé en conditions réelles** (scraping, `datahorse`,
-  rendu des graphiques avec vraies données) — l'environnement de
-  développement précédent n'avait pas d'accès réseau vers Alibaba/PyPI de
-  façon fiable. **Considère tout comme non validé jusqu'à preuve du
+- **Le scraping live et la recherche en langage naturel ont été validés
+  avec de vrais appels** (voir historique des décisions) — mais le reste
+  (rendu des graphiques fixes avec de gros volumes de données réelles,
+  MySQL, etc.) n'a toujours pas été testé en conditions réelles au-delà de
+  ce qui est documenté ici. **Considère tout le reste comme non validé jusqu'à preuve du
   contraire.**
 - Dans `proxies_providers.py`, certains chemins d'erreur font
   `return typer.Exit(code=1)` au lieu de lever une exception (reliquat de

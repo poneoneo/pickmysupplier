@@ -235,21 +235,31 @@ else:
 			"Pose ta question sur les produits/fournisseurs",
 			placeholder="ex: quels sont les 5 fournisseurs les mieux notés en Chine ?",
 		)
-		if st.button("Chercher", disabled=not query):
-			import datahorse  # noqa: F401 — import registers df.chat() as a pandas accessor
+		chart_type_labels = {
+			"Auto (selon la question)": "auto",
+			"Tableau seulement": "none",
+			"Histogramme": "histogram",
+			"Barres": "bar",
+			"Boîte à moustaches": "box",
+			"Nuage de points": "scatter",
+		}
+		chart_type_choice = st.selectbox(
+			"Type de graphique", list(chart_type_labels.keys())
+		)
 
-			from sourcing_intel_cli.nl_search import configure_datahorse
+		if st.button("Chercher", disabled=not query):
+			from sourcing_intel_cli.chart_builder import build_chart, suggest_chart_type
+			from sourcing_intel_cli.nl_search import apply_query_spec, build_query_spec
 
 			with st.spinner("Recherche en cours..."):
 				try:
-					configure_datahorse()
+					# The LLM only ever returns a small filter/sort/select spec — we
+					# execute it ourselves with pandas. No LLM-generated code runs.
+					spec = build_query_spec(query, df)
+					result = apply_query_spec(df, spec)
 				except RuntimeError as e:
 					st.error(str(e))
 					st.stop()
-				try:
-					result = df.chat(  # type: ignore
-						f"{query} return the result as a dataframe with only relevant columns."
-					)
 				except Exception:  # noqa: BLE001
 					logger.exception("Natural-language search failed")
 					st.error(
@@ -257,10 +267,27 @@ else:
 						"ou réessaie plus tard si le problème persiste."
 					)
 					st.stop()
-			if result is None:
+			if result.empty:
 				st.warning("Aucun résultat pour cette question.")
 			else:
-				st.dataframe(result, use_container_width=True)
+				chart_type = chart_type_labels[chart_type_choice]
+				resolved_type = suggest_chart_type(query) if chart_type == "auto" else chart_type
+				fig = (
+					build_chart(result, resolved_type, title=query, metric_col=spec.get("sort_by"))
+					if resolved_type != "none"
+					else None
+				)
+				if fig is not None:
+					st.plotly_chart(fig, use_container_width=True)
+					with st.expander("Voir les données du graphique"):
+						st.dataframe(result, use_container_width=True)
+				else:
+					if resolved_type != "none":
+						st.caption(
+							f"Pas assez de colonnes adaptées pour un graphique « {resolved_type} » "
+							"avec ce résultat — affichage en tableau."
+						)
+					st.dataframe(result, use_container_width=True)
 		st.caption(
 			"Cette recherche lit uniquement une copie en mémoire des données (lecture seule) — "
 			"jamais d'écriture en base depuis une requête en langage naturel."

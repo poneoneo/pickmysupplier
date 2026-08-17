@@ -33,5 +33,5 @@ branches utilisée sur ce projet.
 
 ## Stack technique
 
-Python · Streamlit · Playwright · SQLModel/SQLAlchemy · Plotly · datahorse
-(recherche en langage naturel)
+Python · Streamlit · Playwright · SQLModel/SQLAlchemy · Plotly · Groq
+(recherche en langage naturel — filtre/tri structuré, pas de code généré)
