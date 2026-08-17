@@ -123,6 +123,41 @@ def build_bar_option(
 	return {**base, "xAxis": category_axis, "yAxis": value_axis}
 
 
+def build_box_option(df: pd.DataFrame, category_col: str, value_col: str, title: str) -> dict:
+	"""Build an ECharts boxplot option.
+
+	ECharts' `boxplot` series needs `[min, Q1, median, Q3, max]` already
+	computed per category — unlike Plotly's `px.box`, there's no
+	client-side stats helper available from Python, so quartiles are
+	computed per group with `pandas.Series.quantile` before building the
+	option.
+
+	:param df: The dataframe to chart.
+	:type df: pd.DataFrame
+	:param category_col: Column to group by (the box-plot categories).
+	:type category_col: str
+	:param value_col: Numeric column the boxes summarize.
+	:type value_col: str
+	:param title: Chart title.
+	:type title: str
+	:return: An ECharts `option` dict.
+	:rtype: dict
+	"""
+	categories = []
+	box_data = []
+	for name, group in df.groupby(category_col)[value_col]:
+		categories.append(str(name))
+		box_data.append(group.quantile([0, 0.25, 0.5, 0.75, 1]).tolist())
+	return {
+		"title": {"text": title},
+		"color": SERIES_COLORS,
+		"tooltip": {},
+		"xAxis": {"type": "category", "data": categories, "name": category_col},
+		"yAxis": {"type": "value", "name": value_col},
+		"series": [{"type": "boxplot", "data": box_data}],
+	}
+
+
 def build_chart(
 	df: pd.DataFrame, chart_type: str, title: str = "", metric_col: str | None = None
 ) -> dict | None:
@@ -159,5 +194,10 @@ def build_chart(
 		if not categorical_cols or not numeric_cols:
 			return None
 		return build_bar_option(df, categorical_cols[0], numeric_cols[0], title)
+
+	if chart_type == "box":
+		if not categorical_cols or not numeric_cols:
+			return None
+		return build_box_option(df, categorical_cols[0], numeric_cols[0], title)
 
 	return None

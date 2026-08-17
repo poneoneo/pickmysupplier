@@ -91,6 +91,17 @@ class TestBuildChart:
 		option = build_chart(self._df(), "bar", metric_col="not_a_real_column")
 		assert option["series"][0]["data"][0] == 4.8
 
+	def test_box_uses_categorical_and_numeric_columns(self):
+		df = pd.DataFrame(
+			{
+				"country_name": ["chine", "chine", "inde"],
+				"min_price": [1.0, 3.0, 2.0],
+			}
+		)
+		option = build_chart(df, "box")
+		assert option["series"][0]["type"] == "boxplot"
+		assert set(option["xAxis"]["data"]) == {"chine", "inde"}
+
 
 class TestBuildBarOptionHorizontal:
 	def test_horizontal_swaps_axes(self):
