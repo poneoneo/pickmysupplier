@@ -303,7 +303,9 @@ class ScrapingBeeProxyProvider:
 	ENDPOINT = "https://app.scrapingbee.com/api/v1/"
 
 	@classmethod
-	def sync_scraper(cls, *, save_in: str, key_words: str, page_results: int) -> None:
+	def sync_scraper(
+		cls, *, save_in: str, key_words: str, page_results: int, api_key: str | None = None
+	) -> None:
 		"""
 		Initiates synchronous scraping via the ScrapingBee API based on the provided keywords.
 
@@ -317,11 +319,20 @@ class ScrapingBeeProxyProvider:
 		:type key_words: str
 		:param page_results: The number of pages to scrape.
 		:type page_results: int
+		:param api_key: A visitor-supplied ScrapingBee key to use instead of the
+			owner's `SCRAPINGBEE_API_KEY` from `.env`, if provided.
+		:type api_key: str | None
 		:return: None
 		:rtype: None
-		:raises RuntimeError: If no API key is set.
+		:raises RuntimeError: If no API key is set (neither `api_key` nor the
+			owner's `.env` key).
+		:raises ScrapingBeeQuotaExceeded: If ScrapingBee reports the resolved
+			key is out of credits (HTTP 429) — callers should catch this
+			before the generic `RuntimeError` to show a specific "get your
+			own free key" message.
 		"""
-		if cls.SB_API_KEY == "":
+		resolved_key = _resolve_scrapingbee_key(api_key, cls.SB_API_KEY)
+		if resolved_key == "":
 			rprint("[red]You need to set your  API key to use ScrapingBee proxies ... [/red]")
 			raise RuntimeError("You need to set your ScrapingBee API key to use ScrapingBee proxies.")
 		with Progress(
@@ -338,21 +349,7 @@ class ScrapingBeeProxyProvider:
 			try:
 				for url in urls_pusher(words=key_words, stop_at=page_results):
 					logger.info(f"Loading page {url.split('page=')[1]} ... ")
-					response = api_request.get(
-						cls.ENDPOINT,
-						params={
-							"api_key": cls.SB_API_KEY,
-							"url": url,
-							"render_js": "true",
-							# premium_proxy is required for country_code to take
-							# effect (ScrapingBee docs) — pricier per-request
-							# (residential vs. datacenter proxy) than the plain
-							# default, but keeps prices in a single currency.
-							"premium_proxy": "true",
-							"country_code": TARGET_COUNTRY,
-						},
-						timeout=0,
-					)
+					response = _fetch_via_scrapingbee(api_request, cls.ENDPOINT, resolved_key, url)
 					if not response.ok:
 						logger.warning(
 							f"ScrapingBee request failed for page {url.split('page=')[1]} "
