@@ -7,7 +7,7 @@ REST) and isn't unit-testable without network access.
 
 from __future__ import annotations
 
-from sourcing_intel_cli.proxies_providers import _with_country_targeting
+from sourcing_intel_cli.proxies_providers import _with_country_targeting, _resolve_scrapingbee_key
 
 
 class TestWithCountryTargeting:
@@ -33,3 +33,14 @@ class TestWithCountryTargeting:
 
 	def test_empty_string_is_left_unchanged(self):
 		assert _with_country_targeting("", "us") == ""
+
+
+class TestResolveScrapingbeeKey:
+	def test_uses_visitor_key_when_provided(self):
+		assert _resolve_scrapingbee_key("visitor-key", "owner-key") == "visitor-key"
+
+	def test_falls_back_to_owner_key_when_visitor_key_is_none(self):
+		assert _resolve_scrapingbee_key(None, "owner-key") == "owner-key"
+
+	def test_falls_back_to_owner_key_when_visitor_key_is_empty_string(self):
+		assert _resolve_scrapingbee_key("", "owner-key") == "owner-key"

@@ -34,6 +34,20 @@ TARGET_COUNTRY = "us"
 _BD_CDP_URL_RE = re.compile(r"^(?P<scheme>\w+://)(?P<user>[^:@]+):(?P<password>[^@]+)@(?P<rest>.+)$")
 
 
+def _resolve_scrapingbee_key(visitor_key: str | None, fallback_key: str) -> str:
+	"""Pick which ScrapingBee API key to use for a scrape.
+
+	:param visitor_key: The key a visitor typed into the Scraper page's
+		optional field, if any.
+	:type visitor_key: str | None
+	:param fallback_key: The owner's key from `.env` (`SCRAPINGBEE_API_KEY`).
+	:type fallback_key: str
+	:return: `visitor_key` if non-empty, else `fallback_key`.
+	:rtype: str
+	"""
+	return visitor_key or fallback_key
+
+
 def _with_country_targeting(cdp_url: str, country: str = TARGET_COUNTRY) -> str:
 	"""Insert BrightData's `-country-XX` flag into a Scraping Browser CDP URL.
 
