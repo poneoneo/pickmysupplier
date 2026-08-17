@@ -158,6 +158,30 @@ def build_box_option(df: pd.DataFrame, category_col: str, value_col: str, title:
 	}
 
 
+def build_scatter_option(df: pd.DataFrame, x_col: str, y_col: str, title: str) -> dict:
+	"""Build an ECharts scatter-chart option.
+
+	:param df: The dataframe to chart.
+	:type df: pd.DataFrame
+	:param x_col: Column for the x-axis.
+	:type x_col: str
+	:param y_col: Column for the y-axis.
+	:type y_col: str
+	:param title: Chart title.
+	:type title: str
+	:return: An ECharts `option` dict.
+	:rtype: dict
+	"""
+	return {
+		"title": {"text": title},
+		"color": SERIES_COLORS,
+		"tooltip": {},
+		"xAxis": {"type": "value", "name": x_col},
+		"yAxis": {"type": "value", "name": y_col},
+		"series": [{"type": "scatter", "data": df[[x_col, y_col]].values.tolist()}],
+	}
+
+
 def build_chart(
 	df: pd.DataFrame, chart_type: str, title: str = "", metric_col: str | None = None
 ) -> dict | None:
@@ -199,5 +223,10 @@ def build_chart(
 		if not categorical_cols or not numeric_cols:
 			return None
 		return build_box_option(df, categorical_cols[0], numeric_cols[0], title)
+
+	if chart_type == "scatter":
+		if len(numeric_cols) < 2:
+			return None
+		return build_scatter_option(df, numeric_cols[0], numeric_cols[1], title)
 
 	return None

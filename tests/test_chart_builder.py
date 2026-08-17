@@ -102,6 +102,15 @@ class TestBuildChart:
 		assert option["series"][0]["type"] == "boxplot"
 		assert set(option["xAxis"]["data"]) == {"chine", "inde"}
 
+	def test_scatter_uses_two_numeric_columns(self):
+		option = build_chart(self._df(), "scatter")
+		assert option["series"][0]["type"] == "scatter"
+		assert option["series"][0]["data"] == [[4.8, 1.2], [4.5, 3.4], [4.2, 2.1]]
+
+	def test_scatter_with_only_one_numeric_column_returns_none(self):
+		df = pd.DataFrame({"supplier_name": ["Acme", "Beta"], "min_price": [1.2, 3.4]})
+		assert build_chart(df, "scatter") is None
+
 
 class TestBuildBarOptionHorizontal:
 	def test_horizontal_swaps_axes(self):
