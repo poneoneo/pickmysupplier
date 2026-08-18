@@ -20,6 +20,30 @@ CHART_TYPES = ("none", "auto", "histogram", "bar", "box", "scatter")
 # Matches the dark reference design's chart series colors (blue/red/pink).
 SERIES_COLORS = ["#5b8ff9", "#e8524c", "#f6a5c0"]
 
+
+def _sanitize_for_json(values: list) -> list:
+	"""Replace NaN with None so `st_echarts` can safely `json.dumps` the option.
+
+	`st_echarts` serializes option dicts with plain `json.dumps`, which
+	emits a bare `NaN` literal that the frontend's `JSON.parse` rejects —
+	a legacy/degenerate database with null numeric fields would otherwise
+	break the chart instead of just omitting a point.
+
+	:param values: Numbers (or nested lists of numbers, e.g. `[[x, y], ...]`
+		for scatter, or `[min, q1, median, q3, max]` per category for boxplot).
+	:type values: list
+	:return: The same structure with any float NaN replaced by `None`.
+	:rtype: list
+	"""
+	def _clean(v):
+		if isinstance(v, list):
+			return [_clean(x) for x in v]
+		if isinstance(v, float) and v != v:  # NaN != NaN
+			return None
+		return v
+	return _clean(values)
+
+
 _KEYWORD_TO_CHART_TYPE = (
 	(("distribution", "répartition", "repartition"), "histogram"),
 	(("dispersion", "écart", "ecart", "boîte", "boite"), "box"),
@@ -87,6 +111,7 @@ def build_histogram_option(df: pd.DataFrame, numeric_col: str, title: str) -> di
 	return {
 		"title": {"text": title},
 		"color": SERIES_COLORS,
+		"backgroundColor": "transparent",
 		"tooltip": {},
 		"xAxis": {"type": "category", "data": labels, "name": numeric_col},
 		"yAxis": {"type": "value", "name": "count"},
@@ -116,8 +141,14 @@ def build_bar_option(
 	"""
 	category_axis = {"type": "category", "data": df[category_col].tolist(), "name": category_col}
 	value_axis = {"type": "value", "name": value_col}
-	series = [{"type": "bar", "data": df[value_col].tolist()}]
-	base = {"title": {"text": title}, "color": SERIES_COLORS, "tooltip": {}, "series": series}
+	series = [{"type": "bar", "data": _sanitize_for_json(df[value_col].tolist())}]
+	base = {
+		"title": {"text": title},
+		"color": SERIES_COLORS,
+		"backgroundColor": "transparent",
+		"tooltip": {},
+		"series": series,
+	}
 	if horizontal:
 		return {**base, "xAxis": value_axis, "yAxis": category_axis}
 	return {**base, "xAxis": category_axis, "yAxis": value_axis}
@@ -147,10 +178,11 @@ def build_box_option(df: pd.DataFrame, category_col: str, value_col: str, title:
 	box_data = []
 	for name, group in df.groupby(category_col)[value_col]:
 		categories.append(str(name))
-		box_data.append(group.quantile([0, 0.25, 0.5, 0.75, 1]).tolist())
+		box_data.append(_sanitize_for_json(group.quantile([0, 0.25, 0.5, 0.75, 1]).tolist()))
 	return {
 		"title": {"text": title},
 		"color": SERIES_COLORS,
+		"backgroundColor": "transparent",
 		"tooltip": {},
 		"xAxis": {"type": "category", "data": categories, "name": category_col},
 		"yAxis": {"type": "value", "name": value_col},
@@ -175,10 +207,11 @@ def build_scatter_option(df: pd.DataFrame, x_col: str, y_col: str, title: str) -
 	return {
 		"title": {"text": title},
 		"color": SERIES_COLORS,
+		"backgroundColor": "transparent",
 		"tooltip": {},
 		"xAxis": {"type": "value", "name": x_col},
 		"yAxis": {"type": "value", "name": y_col},
-		"series": [{"type": "scatter", "data": df[[x_col, y_col]].values.tolist()}],
+		"series": [{"type": "scatter", "data": _sanitize_for_json(df[[x_col, y_col]].values.tolist())}],
 	}
 
 

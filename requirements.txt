@@ -1,4 +1,6 @@
 streamlit>=1.36
+# Exact pin: 0.5.0+ requires Streamlit's newer "components v2" API (needs an
+# asset_dir declaration this project doesn't have) and crashes on import — see git history.
 streamlit-echarts==0.4.0
 numpy>=1.24
 pandas>=2.0

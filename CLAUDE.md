@@ -35,6 +35,13 @@ valide les données, les stocke, puis permet de les explorer via une
 graphiques. Il n'y a plus de CLI ni de serveur MCP (retirés volontairement
 pour réduire l'ambition/complexité — voir section Historique des décisions).
 
+L'app est multi-pages via `st.navigation` : **Accueil** (pitch + bannière de
+quota), **Explorer** (sélecteur de jeu de données + recherche en langage
+naturel + graphiques), **Scraper** (scraping en direct + clé ScrapingBee
+BYO + jeu de démo), **Aide** (guide d'onboarding : où trouver une clé
+ScrapingBee gratuite, comment les données sont organisées, mode d'emploi).
+Thème sombre (`.streamlit/config.toml`).
+
 ## Stack technique
 
 - **Scraping** : Playwright (navigateur headless ou client HTTP `playwright.request`),
@@ -66,7 +73,10 @@ pour réduire l'ambition/complexité — voir section Historique des décisions)
   dans le prompt, sinon un filtre sur `country_name` devine `"China"` alors
   que les données stockent `"chine"` (minuscule, français — voir
   `utils_scrapping.country_name`), et retourne silencieusement zéro ligne.
-- **Visualisation** : Plotly (`plotly.express`)
+- **Visualisation** : ECharts via `streamlit-echarts` (`st_echarts`), thème
+  sombre — `chart_builder.py` construit les dicts d'`option` ECharts
+  (histogramme/barres/boîte à moustaches/nuage de points) au lieu de
+  `plotly.express` (retiré)
 - **Logs** : `loguru` ; **affichage terminal legacy** : `rich` (encore
   utilisé dans `proxies_providers.py` pour les messages de progression)
 
@@ -165,9 +175,9 @@ Règles déterministes, pas de jugement LLM :
   tous les champs booléens strictement `bool` ; tous les champs numériques
   non négatifs
 
-Produit un rapport (`QualityIssue`) affiché dans la sidebar Streamlit après
-chaque scraping, et écrit sur disque via `write_quality_report`
-(`data_quality_report.json`).
+Produit un rapport (`QualityIssue`) affiché sur la page **Scraper** après
+chaque scraping (ou chargement du jeu de démo), et écrit sur disque via
+`write_quality_report` (`data_quality_report.json`).
 
 ## Variables d'environnement (`.env` à la racine, non committé)
 

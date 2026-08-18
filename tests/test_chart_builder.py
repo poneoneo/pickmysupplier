@@ -76,6 +76,16 @@ class TestBuildChart:
 		df = pd.DataFrame({"min_price": [1.2, 3.4], "max_price": [2.0, 5.0]})
 		assert build_chart(df, "bar") is None
 
+	def test_bar_nan_value_becomes_none_not_nan(self):
+		df = pd.DataFrame(
+			{
+				"supplier_name": ["Acme", "Beta", "Gamma"],
+				"supplier_service_score": [4.8, float("nan"), 4.2],
+			}
+		)
+		option = build_chart(df, "bar")
+		assert option["series"][0]["data"][1] is None
+
 	def test_metric_col_is_used_as_value_axis_over_first_numeric_column(self):
 		df = pd.DataFrame(
 			{
@@ -101,6 +111,10 @@ class TestBuildChart:
 		option = build_chart(df, "box")
 		assert option["series"][0]["type"] == "boxplot"
 		assert set(option["xAxis"]["data"]) == {"chine", "inde"}
+		categories = option["xAxis"]["data"]
+		# pandas.Series([1.0, 3.0]).quantile([0, 0.25, 0.5, 0.75, 1]).tolist()
+		chine_index = categories.index("chine")
+		assert option["series"][0]["data"][chine_index] == [1.0, 1.5, 2.0, 2.5, 3.0]
 
 	def test_scatter_uses_two_numeric_columns(self):
 		option = build_chart(self._df(), "scatter")

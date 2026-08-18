@@ -170,10 +170,16 @@ def page_accueil() -> None:
 		"""
 	)
 	if st.session_state.get("sb_quota_exhausted"):
-		st.warning(
-			"⚠️ La clé ScrapingBee de démo est épuisée pour l'instant — "
-			"récupère la tienne gratuitement, voir la page **Aide**."
-		)
+		if st.session_state.get("sb_quota_exhausted_own_key"):
+			st.warning(
+				"⚠️ Ta clé ScrapingBee a épuisé son quota de crédits — "
+				"vérifie ton compte ScrapingBee ou réessaie plus tard."
+			)
+		else:
+			st.warning(
+				"⚠️ La clé ScrapingBee de démo est épuisée pour l'instant — "
+				"récupère la tienne gratuitement, voir la page **Aide**."
+			)
 	st.markdown("**Pour commencer :**")
 	col_explorer, col_scraper, col_aide = st.columns(3)
 	with col_explorer:
@@ -349,10 +355,16 @@ def page_scraper() -> None:
 	st.title("Scraper")
 
 	if st.session_state.get("sb_quota_exhausted"):
-		st.warning(
-			"⚠️ La clé ScrapingBee de démo est épuisée pour l'instant — "
-			"récupère la tienne gratuitement (voir la page **Aide**) ou saisis-la ci-dessous."
-		)
+		if st.session_state.get("sb_quota_exhausted_own_key"):
+			st.warning(
+				"⚠️ Ta clé ScrapingBee a épuisé son quota de crédits — "
+				"vérifie ton compte ScrapingBee ou réessaie plus tard."
+			)
+		else:
+			st.warning(
+				"⚠️ La clé ScrapingBee de démo est épuisée pour l'instant — "
+				"récupère la tienne gratuitement (voir la page **Aide**) ou saisis-la ci-dessous."
+			)
 
 	keywords = st.text_input("Mots-clés", placeholder="ex: wireless earbuds")
 	provider_name = st.selectbox("Fournisseur de proxy", ["scrapingbee", "brightdata"])
@@ -365,8 +377,8 @@ def page_scraper() -> None:
 			type="password",
 			help="Laisse vide pour utiliser la clé de démo du site. Voir la page "
 			"Aide pour savoir où trouver la tienne, gratuitement.",
+			key="user_scrapingbee_key",
 		)
-		st.session_state["user_scrapingbee_key"] = user_scrapingbee_key
 
 	if st.button("Scraper en direct", type="primary", disabled=not keywords):
 		provider_cls = {
@@ -389,17 +401,24 @@ def page_scraper() -> None:
 					provider_cls.sync_scraper(
 						save_in=save_in_folder, key_words=keywords, page_results=int(page_results)
 					)
-			except ScrapingBeeQuotaExceeded:
-				logger.exception("ScrapingBee quota exceeded")
+			except ScrapingBeeQuotaExceeded as e:
+				logger.warning(f"ScrapingBee quota exceeded: {e}")
 				st.session_state["sb_quota_exhausted"] = True
-				st.error(
-					"La clé ScrapingBee a épuisé son quota de crédits. Récupère la "
-					"tienne gratuitement (voir la page Aide) ou saisis-la ci-dessus."
-				)
+				st.session_state["sb_quota_exhausted_own_key"] = bool(user_scrapingbee_key)
+				if user_scrapingbee_key:
+					st.error(
+						"Ta clé ScrapingBee a épuisé son quota de crédits. Vérifie "
+						"ton compte ScrapingBee ou réessaie plus tard."
+					)
+				else:
+					st.error(
+						"La clé ScrapingBee a épuisé son quota de crédits. Récupère la "
+						"tienne gratuitement (voir la page Aide) ou saisis-la ci-dessus."
+					)
 				st.stop()
-			except Exception as e:  # noqa: BLE001
+			except Exception:  # noqa: BLE001
 				logger.exception("Scraping failed")
-				st.error(f"Le scraping a échoué : {e}\n\nVoir logs/app.log pour le détail.")
+				st.error("Le scraping a échoué. Voir logs/app.log pour le détail.")
 				st.stop()
 
 		with st.spinner("Analyse des pages..."):

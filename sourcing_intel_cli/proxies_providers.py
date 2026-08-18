@@ -153,6 +153,8 @@ class BrightDataProxyProvider:
 		if cls.BD_API_KEY == "":
 			rprint("[red]You need to set your  API key to use BrightData proxies ... [/red]")
 			raise RuntimeError("You need to set your BrightData API key to use BrightData proxies.")
+		global HTML_PAGE_RESULT
+		HTML_PAGE_RESULT.clear()
 		with Progress(
 			SpinnerColumn(finished_text="[bold green]finished ✓[/bold green]"),
 			*Progress.get_default_columns(),
@@ -241,6 +243,8 @@ class BrightDataProxyProvider:
 		if cls.BD_API_KEY == "":
 			rprint("[red]You need to set your  API key to use BrightData proxies ... [/red]")
 			raise RuntimeError("You need to set your BrightData API key to use BrightData proxies.")
+		global HTML_PAGE_RESULT
+		HTML_PAGE_RESULT.clear()
 		with Progress(
 			SpinnerColumn(finished_text="[bold green]finished ✓[/bold green]"),
 			*Progress.get_default_columns(),
@@ -288,7 +292,6 @@ class BrightDataProxyProvider:
 					html_content = response.text()
 					progress.start_task(task)
 					progress.update(task, advance=100 / page_results)
-					global HTML_PAGE_RESULT
 					HTML_PAGE_RESULT.append(html_content)
 					logger.info(f"Closing the page {url.split('page=')[1]} ... ")
 					page.close()
@@ -335,6 +338,8 @@ class ScrapingBeeProxyProvider:
 		if resolved_key == "":
 			rprint("[red]You need to set your  API key to use ScrapingBee proxies ... [/red]")
 			raise RuntimeError("You need to set your ScrapingBee API key to use ScrapingBee proxies.")
+		global HTML_PAGE_RESULT
+		HTML_PAGE_RESULT.clear()
 		with Progress(
 			SpinnerColumn(finished_text="[bold green]finished ✓[/bold green]"),
 			*Progress.get_default_columns(),
@@ -362,7 +367,6 @@ class ScrapingBeeProxyProvider:
 					progress.start_task(task)
 					html_content = response.text()
 					progress.update(task, advance=100 / page_results)
-					global HTML_PAGE_RESULT
 					HTML_PAGE_RESULT.append(html_content)
 					logger.info(f"Closing the page {url.split('page=')[1]} ... ")
 			finally:
