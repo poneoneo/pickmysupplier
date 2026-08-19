@@ -49,9 +49,10 @@ Thème sombre (`.streamlit/config.toml`).
   ScrapingBee (API REST, rendu JS côté serveur) — deux providers interchangeables.
   Syphoon a été retiré : le service n'existe plus, remplacé par ScrapingBee.
 - **Parsing HTML** : `selectolax`
-- **Modèles/DB** : SQLModel + SQLAlchemy, backend SQLite (MySQL supporté par
-  `engine_and_database.py` mais plus exposé nulle part côté interface —
-  code mort à surveiller si on le réactive un jour)
+- **Modèles/DB** : SQLModel + SQLAlchemy, backend SQLite uniquement
+  (`create_db_engine` accepte n'importe quelle URL SQLAlchemy, mais aucune
+  interface ne propose autre chose que SQLite — le support MySQL dédié a
+  été retiré, voir Historique des décisions)
 - **Validation des données** : module maison déterministe (pas de LLM),
   voir section dédiée ci-dessous
 - **Interface** : Streamlit (`app.py`) — remplace l'ancien CLI Typer/Click
@@ -225,22 +226,9 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
 - **Le scraping live et la recherche en langage naturel ont été validés
   avec de vrais appels** (voir historique des décisions) — mais le reste
   (rendu des graphiques fixes avec de gros volumes de données réelles,
-  MySQL, etc.) n'a toujours pas été testé en conditions réelles au-delà de
-  ce qui est documenté ici. **Considère tout le reste comme non validé jusqu'à preuve du
-  contraire.**
-- Dans `proxies_providers.py`, certains chemins d'erreur font
-  `return typer.Exit(code=1)` au lieu de lever une exception (reliquat de
-  l'ancien code CLI). Depuis `app.py`, ça peut donner un échec silencieux
-  (le spinner se termine sans erreur visible alors que rien n'a été
-  scrapé) plutôt qu'un message clair. À corriger si ça pose problème en
-  pratique — remplacer ces `return typer.Exit(...)` par des exceptions
-  levées normalement.
-- `engine_and_database.py` supporte toujours MySQL, mais plus aucune
-  interface ne l'expose (l'ancien `commands.py`/`db-init mysql` a été
-  supprimé). Code mort à nettoyer ou à réactiver, au choix.
-- `click` et `typer` restent importés dans `proxies_providers.py`
-  uniquement pour `UsageError`/`typer.Exit` — dépendances qui pourraient
-  être retirées si on nettoie les chemins d'erreur ci-dessus.
+  etc.) n'a toujours pas été testé en conditions réelles au-delà de ce qui
+  est documenté ici. **Considère tout le reste comme non validé jusqu'à
+  preuve du contraire.**
 
 ## Historique des décisions (pour éviter de revenir en arrière par erreur)
 
@@ -252,12 +240,19 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
 - `db_credentials.json` (pour MySQL) était protégé en écriture (`chmod 600`)
   dans l'ancienne version CLI — cette protection n'existe plus car MySQL
   n'est plus exposé ; à réintroduire si MySQL revient dans l'interface.
+- Les chemins d'erreur `return typer.Exit(...)` de `proxies_providers.py`
+  (reliquat de l'ancien CLI Typer/Click) ont été remplacés par de vraies
+  exceptions (`RuntimeError`) ; `typer`/`click` ne sont plus importés nulle
+  part dans le projet.
+- Le support MySQL dédié (`pymysql`, gestion spécifique de
+  `MySQLdbOperationalError` dans `engine_and_database.save_all_changes`) a
+  été retiré — c'était du code mort depuis le retrait de l'ancien
+  `commands.py`/`db-init mysql`. `create_db_engine` reste générique
+  (accepte toute URL SQLAlchemy) mais plus rien ne construit d'URL MySQL
+  côté interface.
 
 ## Prochaines étapes possibles (non commencées)
 
-- Corriger les chemins d'erreur silencieux dans `proxies_providers.py`
-  (`return typer.Exit(...)` → vraies exceptions)
-- Nettoyer le support MySQL mort ou le réintégrer proprement dans `app.py`
 - Commitizen (version bump + changelog automatique) et packaging pipx —
   tous deux explicitement reportés par l'utilisateur, voir
   `project_deferred_packaging_versioning` en mémoire
