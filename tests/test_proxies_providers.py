@@ -11,7 +11,7 @@ import pytest
 
 from sourcing_intel_cli.proxies_providers import (
 	TARGET_COUNTRY,
-	ScrapingBeeQuotaExceeded,
+	ScrapingBeeKeyError,
 	_with_country_targeting,
 	_resolve_scrapingbee_key,
 	_fetch_via_scrapingbee,
@@ -86,12 +86,24 @@ class TestFetchViaScrapingbee:
 		assert stub.last_params["country_code"] == TARGET_COUNTRY
 		assert stub.last_params["premium_proxy"] == "true"
 
-	def test_429_raises_quota_exceeded(self):
+	def test_429_raises_key_error(self):
+		# Quota exceeded on an otherwise-valid key.
 		stub = _StubAPIRequest(_StubResponse(429))
-		with pytest.raises(ScrapingBeeQuotaExceeded):
+		with pytest.raises(ScrapingBeeKeyError):
 			_fetch_via_scrapingbee(stub, "https://endpoint.example", "my-key", "https://target.example")
 
-	def test_non_429_failure_returns_response_not_ok(self):
+	def test_401_raises_key_error(self):
+		# Invalid/revoked/terminated key — a real case observed against the
+		# live ScrapingBee API (distinct from 429's "valid key, no credits
+		# left"), and previously fell through to the generic "not ok, skip
+		# this page" path silently for every page, ending the scrape with
+		# zero pages and no indication to the user that the key was the
+		# problem.
+		stub = _StubAPIRequest(_StubResponse(401))
+		with pytest.raises(ScrapingBeeKeyError):
+			_fetch_via_scrapingbee(stub, "https://endpoint.example", "my-key", "https://target.example")
+
+	def test_other_failure_status_returns_response_not_ok(self):
 		stub = _StubAPIRequest(_StubResponse(500))
 		response = _fetch_via_scrapingbee(stub, "https://endpoint.example", "my-key", "https://target.example")
 		assert response.ok is False

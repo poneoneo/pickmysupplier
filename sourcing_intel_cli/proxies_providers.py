@@ -48,8 +48,17 @@ def _resolve_scrapingbee_key(visitor_key: str | None, fallback_key: str) -> str:
 	return visitor_key or fallback_key
 
 
-class ScrapingBeeQuotaExceeded(RuntimeError):
-	"""Raised when ScrapingBee reports the API key is out of credits (HTTP 429)."""
+class ScrapingBeeKeyError(RuntimeError):
+	"""Raised when ScrapingBee reports the API key can't be used right now.
+
+	Covers both HTTP 429 (a valid key, but out of credits) and HTTP 401 (an
+	invalid, revoked, or expired key) — from a visitor's point of view both
+	mean the same thing: this key isn't working, get a working one. Without
+	catching 401 too, a revoked/terminated key used to fail silently, one
+	page at a time, via the generic "not ok, skip this page" path — ending
+	the scrape with zero pages and no indication to the user that the key
+	was the actual problem.
+	"""
 
 
 def _fetch_via_scrapingbee(api_request, endpoint: str, api_key: str, url: str):
@@ -70,8 +79,8 @@ def _fetch_via_scrapingbee(api_request, endpoint: str, api_key: str, url: str):
 	:type api_key: str
 	:param url: The target page URL to scrape.
 	:type url: str
-	:raises ScrapingBeeQuotaExceeded: If ScrapingBee reports HTTP 429
-		(credits exhausted).
+	:raises ScrapingBeeKeyError: If ScrapingBee reports HTTP 429 (credits
+		exhausted) or HTTP 401 (invalid/revoked/expired key).
 	:return: The response object (`.ok`, `.status`, `.text()`).
 	"""
 	response = api_request.get(
@@ -86,9 +95,9 @@ def _fetch_via_scrapingbee(api_request, endpoint: str, api_key: str, url: str):
 		timeout=0,
 	)
 	if response.status == 429:
-		raise ScrapingBeeQuotaExceeded(
-			"La clé ScrapingBee a épuisé son quota de crédits (HTTP 429)."
-		)
+		raise ScrapingBeeKeyError("La clé ScrapingBee a épuisé son quota de crédits (HTTP 429).")
+	if response.status == 401:
+		raise ScrapingBeeKeyError("La clé ScrapingBee est invalide, expirée ou révoquée (HTTP 401).")
 	return response
 
 
@@ -329,10 +338,11 @@ class ScrapingBeeProxyProvider:
 		:rtype: None
 		:raises RuntimeError: If no API key is set (neither `api_key` nor the
 			owner's `.env` key).
-		:raises ScrapingBeeQuotaExceeded: If ScrapingBee reports the resolved
-			key is out of credits (HTTP 429) — callers should catch this
-			before the generic `RuntimeError` to show a specific "get your
-			own free key" message.
+		:raises ScrapingBeeKeyError: If ScrapingBee reports the resolved key
+			is out of credits (HTTP 429) or invalid/revoked/expired (HTTP
+			401) — callers should catch this before the generic
+			`RuntimeError` to show a specific "your key isn't working"
+			message rather than a generic scraping-failed one.
 		"""
 		resolved_key = _resolve_scrapingbee_key(api_key, cls.SB_API_KEY)
 		if resolved_key == "":
