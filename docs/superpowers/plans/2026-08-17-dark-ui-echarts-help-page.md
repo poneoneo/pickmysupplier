@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - `streamlit>=1.36` (was `>=1.35`) — floor for `st.navigation`/`st.Page`.
-- New dependencies: `streamlit-echarts>=0.7`, `numpy>=1.24`.
+- New dependencies: `streamlit-echarts==0.4.0` (exact pin, not a floor — 0.5.0/0.6.x/0.7.0 hard-crash on import against the Streamlit version this project uses; see ledger "Task 1 — mid-task finding"), `numpy>=1.24`.
 - Every chart renders via `streamlit_echarts.st_echarts` — no `st.plotly_chart` or `import plotly` anywhere in the final state.
 - No BrightData BYO-key flow — the `api_key` override is ScrapingBee-only.
 - No real browser cookies for the quota-exhausted signal — `st.session_state` only, resets per browser tab.
@@ -42,7 +42,7 @@ plotly>=5.20
 to:
 ```
 streamlit>=1.36
-streamlit-echarts>=0.7
+streamlit-echarts==0.4.0
 numpy>=1.24
 plotly>=5.20
 ```

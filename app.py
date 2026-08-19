@@ -9,13 +9,14 @@ Run with: streamlit run app.py
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 from loguru import logger
 from sqlmodel import SQLModel
-from streamlit_echarts import st_echarts
+from streamlit_echarts import Map, st_echarts
 
 from sourcing_intel_cli.chart_builder import (
 	build_bar_option,
@@ -40,7 +41,7 @@ from sourcing_intel_cli.nl_search import apply_query_spec, build_query_spec
 from sourcing_intel_cli.proxies_providers import (
 	BrightDataProxyProvider,
 	ScrapingBeeProxyProvider,
-	ScrapingBeeQuotaExceeded,
+	ScrapingBeeKeyError,
 )
 from sourcing_intel_cli.product_naming import summarize_product_names
 from sourcing_intel_cli.scrape_from_disk import PageParser
@@ -77,6 +78,7 @@ def load_products_with_suppliers(db_path: Path) -> pd.DataFrame:
       Product.short_name as short_name,
       Product.min_price as min_price,
       Product.max_price as max_price,
+      Product.minimum_to_order as minimum_to_order,
       Product.product_score as product_score,
       Product.review_count as review_count,
       Product.review_score as review_score,
@@ -90,6 +92,23 @@ def load_products_with_suppliers(db_path: Path) -> pd.DataFrame:
       JOIN Supplier ON Product.supplier_id = Supplier.id"""
 	with sqlite3.connect(db_path) as con:
 		return pd.read_sql_query(query, con)
+
+
+@st.cache_resource
+def _load_world_geojson() -> dict:
+	"""Load the world map GeoJSON used by the "map" chart type, once per session.
+
+	~1MB of polygon data — cached so it's read from disk once, not on every
+	Streamlit rerun. Sourced from Apache ECharts' own map examples (see
+	`sourcing_intel_cli/chart_builder.py`'s `build_map_option` docstring for
+	why the region names are English while this project's data is French).
+
+	:return: The parsed GeoJSON `FeatureCollection`.
+	:rtype: dict
+	"""
+	path = Path(__file__).parent / "sourcing_intel_cli" / "world_map.json"
+	with open(path, encoding="utf-8") as f:
+		return json.load(f)
 
 
 def _validate_and_insert(
@@ -172,13 +191,14 @@ def page_accueil() -> None:
 	if st.session_state.get("sb_quota_exhausted"):
 		if st.session_state.get("sb_quota_exhausted_own_key"):
 			st.warning(
-				"⚠️ Ta clé ScrapingBee a épuisé son quota de crédits — "
-				"vérifie ton compte ScrapingBee ou réessaie plus tard."
+				"⚠️ Ta clé ScrapingBee ne fonctionne pas (quota de crédits épuisé, "
+				"ou clé invalide/expirée) — vérifie ton compte ScrapingBee ou réessaie plus tard."
 			)
 		else:
 			st.warning(
-				"⚠️ La clé ScrapingBee de démo est épuisée pour l'instant — "
-				"récupère la tienne gratuitement, voir la page **Aide**."
+				"⚠️ La clé ScrapingBee de démo ne fonctionne pas pour l'instant "
+				"(quota épuisé ou clé expirée) — récupère la tienne gratuitement, "
+				"voir la page **Aide**."
 			)
 	st.markdown("**Pour commencer :**")
 	col_explorer, col_scraper, col_aide = st.columns(3)
@@ -232,6 +252,7 @@ def page_explorer() -> None:
 					- `product_name` — nom complet du produit (parfois long)
 					- `short_name` — version raccourcie, plus lisible en tableau/graphique
 					- `min_price` / `max_price` — fourchette de prix (USD)
+					- `minimum_to_order` — quantité minimale de commande (MOQ)
 					- `product_score` — note du produit (sur 5)
 					- `review_count` / `review_score` — nombre d'avis et note moyenne
 					- `trade_product` — protégé par Trade Assurance (vrai/faux)
@@ -253,15 +274,20 @@ def page_explorer() -> None:
 				"des critères des deux côtés dans une même question."
 			)
 
-		st.markdown("**Exemples de questions à poser :**")
+		st.markdown(
+			"**Exemples de questions à poser** — le graphique entre parenthèses est celui "
+			"que « Auto » choisit réellement pour cette formulation (vérifié, pas juste indicatif) :"
+		)
 		st.markdown(
 			"""
-			- *Quels sont les 5 fournisseurs avec le meilleur supplier_service_score ?*
-			- *Trouve les produits les moins chers avec un product_score au-dessus de 4.5.*
-			- *Liste les fournisseurs en Chine avec au moins 5 ans d'ancienneté Gold Supplier, triés par prix minimum.*
-			- *Quel produit a le meilleur rapport qualité-prix (bonne note, prix bas) ?*
-			- *Compare le prix moyen des produits par pays fournisseur.*
-			- *Montre les fournisseurs les mieux notés qui offrent la Trade Assurance.*
+			- *Quels sont les 5 fournisseurs avec le meilleur supplier_service_score ?* (Barres)
+			- *Quelle est la distribution des prix minimums ?* (Histogramme)
+			- *Quelle est la dispersion du product_score par pays fournisseur ?* (Boîte à moustaches)
+			- *Y a-t-il une corrélation entre le product_score et le min_price ?* (Nuage de points)
+			- *Compare le prix moyen des produits par pays fournisseur.* (Barres)
+			- *Quelle est la distribution du MOQ (quantité minimale de commande) ?* (Histogramme)
+			- *Quels pays sont représentés parmi les fournisseurs ?* (Carte du monde)
+			- *Liste les fournisseurs en Chine avec au moins 5 ans d'ancienneté Gold Supplier, triés par prix minimum.* (Tableau — choisis "Tableau seulement" dans le menu, "Auto" ne détecte pas ce cas et affichera des barres par défaut)
 			"""
 		)
 
@@ -276,10 +302,29 @@ def page_explorer() -> None:
 			"Barres": "bar",
 			"Boîte à moustaches": "box",
 			"Nuage de points": "scatter",
+			"Carte du monde": "map",
 		}
 		chart_type_choice = st.selectbox("Type de graphique", list(chart_type_labels.keys()))
 
-		if st.button("Chercher", disabled=not query):
+		if "nl_search_running" not in st.session_state:
+			st.session_state["nl_search_running"] = False
+
+		# Two-phase click handling: the click itself only sets a flag and
+		# triggers an immediate rerun, which commits the flag to
+		# session_state *before* the slow Groq call starts. A rapid second
+		# click during that call finds the button already `disabled=True` on
+		# render, instead of interrupting the in-flight rerun and silently
+		# producing nothing (Streamlit cancels an in-progress run when a new
+		# widget interaction arrives, so without this guard, rapid clicks
+		# raced each other and only a click spaced out from the others ever
+		# reached the chart-rendering code below).
+		if st.button(
+			"Chercher", disabled=(not query) or st.session_state["nl_search_running"]
+		):
+			st.session_state["nl_search_running"] = True
+			st.rerun()
+
+		if st.session_state["nl_search_running"]:
 			with st.spinner("Recherche en cours..."):
 				try:
 					# The LLM only ever returns a small filter/sort/select spec — we
@@ -287,16 +332,38 @@ def page_explorer() -> None:
 					spec = build_query_spec(query, df)
 					result = apply_query_spec(df, spec)
 				except RuntimeError as e:
+					st.session_state["nl_search_running"] = False
 					st.error(str(e))
 					st.stop()
 				except Exception:  # noqa: BLE001
+					st.session_state["nl_search_running"] = False
 					logger.exception("Natural-language search failed")
 					st.error(
 						"La recherche a échoué. Réessaie avec une autre formulation, "
 						"ou réessaie plus tard si le problème persiste."
 					)
 					st.stop()
-			if result.empty:
+			st.session_state["nl_search_running"] = False
+
+			# A nonsense/off-topic question still gets syntactically valid
+			# JSON back from Groq (JSON mode guarantees that, not semantic
+			# relevance) — apply_query_spec then silently no-ops every
+			# filter/column/sort that doesn't match a real column rather
+			# than raising, so `result` ends up as the full, unfiltered
+			# dataset instead of empty. Left unchecked, that used to reach
+			# build_chart/st_echarts with no clear signal to the user that
+			# their question wasn't understood — flagging it here instead.
+			spec_is_empty = (
+				not spec.get("filters")
+				and not spec.get("columns")
+				and spec.get("sort_by") not in df.columns
+			)
+			if spec_is_empty:
+				st.info(
+					"Je n'ai pas compris cette question — essaie de mentionner un "
+					"critère précis (prix, score, pays, fournisseur...)."
+				)
+			elif result.empty:
 				st.warning("Aucun résultat pour cette question.")
 			else:
 				chart_type = chart_type_labels[chart_type_choice]
@@ -307,7 +374,12 @@ def page_explorer() -> None:
 					else None
 				)
 				if option is not None:
-					st_echarts(options=option, theme="dark")
+					# The map's GeoJSON is registered separately from the
+					# option dict — st_echarts(map=...) is how ECharts
+					# learns what "world" (referenced in
+					# option["series"][0]["map"]) actually resolves to.
+					map_arg = Map("world", _load_world_geojson()) if resolved_type == "map" else None
+					st_echarts(options=option, theme="dark", height="500px", map=map_arg)
 					with st.expander("Voir les données du graphique"):
 						st.dataframe(result, use_container_width=True)
 				else:
@@ -326,7 +398,7 @@ def page_explorer() -> None:
 		col1, col2 = st.columns(2)
 		with col1:
 			option_price = build_histogram_option(df, "min_price", "Distribution des prix minimums")
-			st_echarts(options=option_price, theme="dark")
+			st_echarts(options=option_price, theme="dark", height="500px")
 		with col2:
 			top_suppliers = (
 				df.groupby("supplier_name")["supplier_service_score"]
@@ -342,12 +414,12 @@ def page_explorer() -> None:
 				"Top 10 fournisseurs par score de service",
 				horizontal=True,
 			)
-			st_echarts(options=option_suppliers, theme="dark")
+			st_echarts(options=option_suppliers, theme="dark", height="500px")
 
 		option_country = build_box_option(
 			df, "country_name", "min_price", "Distribution des prix par pays fournisseur"
 		)
-		st_echarts(options=option_country, theme="dark")
+		st_echarts(options=option_country, theme="dark", height="500px")
 
 
 def page_scraper() -> None:
@@ -357,13 +429,14 @@ def page_scraper() -> None:
 	if st.session_state.get("sb_quota_exhausted"):
 		if st.session_state.get("sb_quota_exhausted_own_key"):
 			st.warning(
-				"⚠️ Ta clé ScrapingBee a épuisé son quota de crédits — "
-				"vérifie ton compte ScrapingBee ou réessaie plus tard."
+				"⚠️ Ta clé ScrapingBee ne fonctionne pas (quota de crédits épuisé, "
+				"ou clé invalide/expirée) — vérifie ton compte ScrapingBee ou réessaie plus tard."
 			)
 		else:
 			st.warning(
-				"⚠️ La clé ScrapingBee de démo est épuisée pour l'instant — "
-				"récupère la tienne gratuitement (voir la page **Aide**) ou saisis-la ci-dessous."
+				"⚠️ La clé ScrapingBee de démo ne fonctionne pas pour l'instant "
+				"(quota épuisé ou clé expirée) — récupère la tienne gratuitement "
+				"(voir la page **Aide**) ou saisis-la ci-dessous."
 			)
 
 	keywords = st.text_input("Mots-clés", placeholder="ex: wireless earbuds")
@@ -401,19 +474,20 @@ def page_scraper() -> None:
 					provider_cls.sync_scraper(
 						save_in=save_in_folder, key_words=keywords, page_results=int(page_results)
 					)
-			except ScrapingBeeQuotaExceeded as e:
-				logger.warning(f"ScrapingBee quota exceeded: {e}")
+			except ScrapingBeeKeyError as e:
+				logger.warning(f"ScrapingBee key problem: {e}")
 				st.session_state["sb_quota_exhausted"] = True
 				st.session_state["sb_quota_exhausted_own_key"] = bool(user_scrapingbee_key)
 				if user_scrapingbee_key:
 					st.error(
-						"Ta clé ScrapingBee a épuisé son quota de crédits. Vérifie "
-						"ton compte ScrapingBee ou réessaie plus tard."
+						"Ta clé ScrapingBee ne fonctionne pas (quota de crédits épuisé, ou "
+						"clé invalide/expirée). Vérifie ton compte ScrapingBee ou réessaie plus tard."
 					)
 				else:
 					st.error(
-						"La clé ScrapingBee a épuisé son quota de crédits. Récupère la "
-						"tienne gratuitement (voir la page Aide) ou saisis-la ci-dessus."
+						"La clé ScrapingBee de démo ne fonctionne pas (quota épuisé ou "
+						"clé expirée). Récupère la tienne gratuitement (voir la page Aide) "
+						"ou saisis-la ci-dessus."
 					)
 				st.stop()
 			except Exception:  # noqa: BLE001

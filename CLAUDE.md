@@ -120,7 +120,12 @@ dedans. Lancer avec `streamlit run app.py` depuis la racine du projet.
 **Supplier** : `name` (unique), `verification_mode`, `sopi_level` (int),
 `country_name`, `years_as_gold_supplier` (int), `supplier_service_score` (float)
 
-**Product** : `name` (unique), `short_name` (nullable — voir
+**Product** : `name` (unique **par fournisseur**, pas globalement — contrainte
+composite `(name, supplier_id)` ; deux fournisseurs différents peuvent
+légitimement poster un produit au même nom/titre, chacun à son propre prix —
+un unique global aurait silencieusement jeté tous les fournisseurs sauf le
+premier à scraper un titre donné, empêchant toute comparaison de prix entre
+fournisseurs), `short_name` (nullable — voir
 `product_naming.py` ci-dessous), `alibaba_guranteed` (bool — faute
 d'orthographe conservée intentionnellement, cohérente entre le modèle et le
 code d'insertion, ne pas "corriger" sans mettre à jour partout), `certifications`,
@@ -169,7 +174,10 @@ Règles déterministes, pas de jugement LLM :
 - **Suppliers** : nom non vide et unique dans le batch ; `sopi_level` int
   non négatif ; `supplier_service_score` numérique non négatif ;
   `years_as_gold_supplier` convertible en int non négatif
-- **Products** : nom non vide et unique dans le batch ; `supplied_by` doit
+- **Products** : nom non vide et unique **par fournisseur** dans le batch (le
+  couple `(name, supplied_by)` — deux fournisseurs différents avec le même
+  nom de produit sont conservés tous les deux, seul un même fournisseur qui
+  répète le même nom est un vrai doublon) ; `supplied_by` doit
   correspondre à un fournisseur déjà validé (garantit que `supplier_id` ne
   sera jamais nul) ; `min_price <= max_price`, tous deux non négatifs ;
   tous les champs booléens strictement `bool` ; tous les champs numériques
