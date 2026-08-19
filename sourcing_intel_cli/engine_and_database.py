@@ -1,7 +1,6 @@
 from typing import Sequence
 
 from loguru import logger
-from pymysql import OperationalError as MySQLdbOperationalError
 from rich.progress import (
 	BarColumn,
 	Progress,
@@ -63,7 +62,7 @@ def save_all_changes(
 	logger.info("Saving all changes ...")
 	try:
 		sql_model.metadata.create_all(engine_db)
-	except MySQLdbOperationalError as e:
+	except OperationalError as e:
 		logger.error(f"Errors has occured: {e}")
 		raise RuntimeError(f"Something went wrong an unexpected error has occured:{e}") from e
 	_ensure_product_short_name_column(engine_db)
