@@ -96,6 +96,30 @@ class TestAddProductsToDb:
 			result = session.exec(select(Product)).all()
 		assert len(result) == 1
 
+	def test_same_product_name_from_different_supplier_is_not_skipped(self, db_engine):
+		# The unique constraint is (name, supplier_id), not name alone — two
+		# suppliers legitimately post a product with the same/similar title,
+		# each at their own price, and both must land in the DB so the price
+		# comparison across suppliers is actually possible.
+		add_suppliers_to_db(
+			[_supplier(name="Shenzhen Acme Co."), _supplier(name="Guangzhou Beta Co.")],
+			engine_db=db_engine,
+		)
+		add_products_to_db(
+			[
+				_product(name="Wireless earbuds", supplied_by="Shenzhen Acme Co."),
+				_product(name="Wireless earbuds", supplied_by="Guangzhou Beta Co."),
+			],
+			engine_db=db_engine,
+		)
+		with Session(db_engine) as session:
+			products = session.exec(select(Product)).all()
+			suppliers = session.exec(select(Supplier)).all()
+		assert len(products) == 2
+		assert all(p.name == "Wireless earbuds" for p in products)
+		# Both rows survived, each linked to its own (distinct) supplier.
+		assert {p.supplier_id for p in products} == {s.id for s in suppliers}
+
 	def test_product_with_unknown_supplier_raises(self, db_engine):
 		with pytest.raises(RuntimeError, match="no supplier named"):
 			add_products_to_db([_product(supplied_by="Ghost Co.")], engine_db=db_engine)

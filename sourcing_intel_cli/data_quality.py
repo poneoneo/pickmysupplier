@@ -149,7 +149,13 @@ def validate_products(
 	"""Apply deterministic quality rules to a batch of scraped products.
 
 	Rules enforced:
-	  - `name` must be a non-empty string, unique within the batch
+	  - `name` must be a non-empty string, unique per supplier within the
+	    batch (the pair `(name, supplied_by)` is the real identity — two
+	    different suppliers legitimately post listings with the same/similar
+	    title for what a human would call "the same product", each at their
+	    own price, and that's exactly the cross-supplier price comparison
+	    this data is meant to support; only the *same* supplier repeating
+	    the *same* name within a batch is a genuine duplicate)
 	  - `supplied_by` must match a supplier that already passed validation
 	    (this is what guarantees `supplier_id` will never end up null)
 	  - `min_price` <= `max_price`, both non-negative numbers
@@ -164,10 +170,11 @@ def validate_products(
 	"""
 	clean: list[ProductDict] = []
 	issues: list[QualityIssue] = []
-	seen_names: set[str] = set()
+	seen_name_supplier_pairs: set[tuple[str, str]] = set()
 
 	for product in products:
 		name = str(product.get("name", "")).strip()
+		supplied_by = str(product.get("supplied_by", "")).strip()
 
 		if not name:
 			issues.append(
@@ -175,15 +182,19 @@ def validate_products(
 			)
 			continue
 
-		if name in seen_names:
+		if (name, supplied_by) in seen_name_supplier_pairs:
 			issues.append(
-				QualityIssue("product", name, "name", "Duplicate product within this batch")
+				QualityIssue(
+					"product",
+					name,
+					"name",
+					"Duplicate product (same name, same supplier) within this batch",
+				)
 			)
 			continue
 
 		row_ok = True
 
-		supplied_by = str(product.get("supplied_by", "")).strip()
 		if supplied_by not in valid_supplier_names:
 			issues.append(
 				QualityIssue(
@@ -247,7 +258,7 @@ def validate_products(
 				row_ok = False
 
 		if row_ok:
-			seen_names.add(name)
+			seen_name_supplier_pairs.add((name, supplied_by))
 			clean.append(product)
 
 	return clean, issues

@@ -187,7 +187,15 @@ def add_products_to_db(products: Sequence[ProductDict], engine_db: Engine):
 		) as progress:
 			add_prods = progress.add_task(description="Adding products to database ...")
 			for product in products:
-				if product["name"] in added:
+				# A product name is only a duplicate together with its
+				# supplier — two different suppliers legitimately post a
+				# product with the same/similar title, each at their own
+				# price (see the composite unique constraint on
+				# `Product(name, supplier_id)` in models.py). Guarding on
+				# `name` alone here would silently drop every supplier but
+				# the first, before this loop ever reaches the DB.
+				name_supplier_key = (product["name"], product["supplied_by"])
+				if name_supplier_key in added:
 					continue
 				try:
 					supplier = _related_supplier(session, supplied_by=product["supplied_by"])
@@ -212,7 +220,7 @@ def add_products_to_db(products: Sequence[ProductDict], engine_db: Engine):
 							is_full_promotion=product["is_full_promotion"],
 						)
 					)
-					added.add(product["name"])
+					added.add(name_supplier_key)
 					session.commit()
 					progress.update(add_prods, advance=100 / len(products))
 				except OperationalError as e:

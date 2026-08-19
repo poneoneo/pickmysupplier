@@ -99,12 +99,25 @@ class TestValidateProducts:
 		assert clean == []
 		assert issues[0].field == "name"
 
-	def test_duplicate_name_keeps_first_only(self):
+	def test_duplicate_name_from_same_supplier_keeps_first_only(self):
 		clean, issues = validate_products(
 			[_product(), _product()], self._valid_supplier_names()
 		)
 		assert len(clean) == 1
 		assert len(issues) == 1
+
+	def test_same_name_from_different_suppliers_is_kept(self):
+		# Two different suppliers legitimately post the same/similar product
+		# title, each at their own price — this must NOT be treated as a
+		# duplicate the way the same supplier re-listing the same name is.
+		valid = {"Shenzhen Acme Co.", "Guangzhou Beta Co."}
+		products = [
+			_product(supplied_by="Shenzhen Acme Co.", min_price=1.5),
+			_product(supplied_by="Guangzhou Beta Co.", min_price=2.0),
+		]
+		clean, issues = validate_products(products, valid)
+		assert len(clean) == 2
+		assert issues == []
 
 	def test_unknown_supplier_is_rejected(self):
 		clean, issues = validate_products(
