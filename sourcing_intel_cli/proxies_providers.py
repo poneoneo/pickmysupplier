@@ -34,6 +34,73 @@ TARGET_COUNTRY = "us"
 _BD_CDP_URL_RE = re.compile(r"^(?P<scheme>\w+://)(?P<user>[^:@]+):(?P<password>[^@]+)@(?P<rest>.+)$")
 
 
+def _resolve_scrapingbee_key(visitor_key: str | None, fallback_key: str) -> str:
+	"""Pick which ScrapingBee API key to use for a scrape.
+
+	:param visitor_key: The key a visitor typed into the Scraper page's
+		optional field, if any.
+	:type visitor_key: str | None
+	:param fallback_key: The owner's key from `.env` (`SCRAPINGBEE_API_KEY`).
+	:type fallback_key: str
+	:return: `visitor_key` if non-empty, else `fallback_key`.
+	:rtype: str
+	"""
+	return visitor_key or fallback_key
+
+
+class ScrapingBeeKeyError(RuntimeError):
+	"""Raised when ScrapingBee reports the API key can't be used right now.
+
+	Covers both HTTP 429 (a valid key, but out of credits) and HTTP 401 (an
+	invalid, revoked, or expired key) — from a visitor's point of view both
+	mean the same thing: this key isn't working, get a working one. Without
+	catching 401 too, a revoked/terminated key used to fail silently, one
+	page at a time, via the generic "not ok, skip this page" path — ending
+	the scrape with zero pages and no indication to the user that the key
+	was the actual problem.
+	"""
+
+
+def _fetch_via_scrapingbee(api_request, endpoint: str, api_key: str, url: str):
+	"""Fetch one page's HTML through the ScrapingBee REST API.
+
+	Isolated from `ScrapingBeeProxyProvider.sync_scraper`'s Playwright
+	setup/teardown so the api_key-resolution and quota-detection logic can
+	be unit tested with a stubbed `api_request` (see
+	`tests/test_proxies_providers.py`) instead of needing a real browser or
+	network access.
+
+	:param api_request: A Playwright `APIRequestContext` (or a stub exposing
+		the same `.get(url, params=..., timeout=...)` -> response interface).
+	:param endpoint: The ScrapingBee REST endpoint.
+	:type endpoint: str
+	:param api_key: The resolved ScrapingBee API key (visitor's own, or the
+		owner's `.env` fallback — see `_resolve_scrapingbee_key`).
+	:type api_key: str
+	:param url: The target page URL to scrape.
+	:type url: str
+	:raises ScrapingBeeKeyError: If ScrapingBee reports HTTP 429 (credits
+		exhausted) or HTTP 401 (invalid/revoked/expired key).
+	:return: The response object (`.ok`, `.status`, `.text()`).
+	"""
+	response = api_request.get(
+		endpoint,
+		params={
+			"api_key": api_key,
+			"url": url,
+			"render_js": "true",
+			"premium_proxy": "true",
+			"country_code": TARGET_COUNTRY,
+		},
+		timeout=0,
+	)
+	if response.status == 429:
+		raise ScrapingBeeKeyError("La clé ScrapingBee a épuisé son quota de crédits (HTTP 429).")
+	if response.status == 401:
+		raise ScrapingBeeKeyError("La clé ScrapingBee est invalide, expirée ou révoquée (HTTP 401).")
+	return response
+
+
 def _with_country_targeting(cdp_url: str, country: str = TARGET_COUNTRY) -> str:
 	"""Insert BrightData's `-country-XX` flag into a Scraping Browser CDP URL.
 
@@ -95,6 +162,8 @@ class BrightDataProxyProvider:
 		if cls.BD_API_KEY == "":
 			rprint("[red]You need to set your  API key to use BrightData proxies ... [/red]")
 			raise RuntimeError("You need to set your BrightData API key to use BrightData proxies.")
+		global HTML_PAGE_RESULT
+		HTML_PAGE_RESULT.clear()
 		with Progress(
 			SpinnerColumn(finished_text="[bold green]finished ✓[/bold green]"),
 			*Progress.get_default_columns(),
@@ -183,6 +252,8 @@ class BrightDataProxyProvider:
 		if cls.BD_API_KEY == "":
 			rprint("[red]You need to set your  API key to use BrightData proxies ... [/red]")
 			raise RuntimeError("You need to set your BrightData API key to use BrightData proxies.")
+		global HTML_PAGE_RESULT
+		HTML_PAGE_RESULT.clear()
 		with Progress(
 			SpinnerColumn(finished_text="[bold green]finished ✓[/bold green]"),
 			*Progress.get_default_columns(),
@@ -230,7 +301,6 @@ class BrightDataProxyProvider:
 					html_content = response.text()
 					progress.start_task(task)
 					progress.update(task, advance=100 / page_results)
-					global HTML_PAGE_RESULT
 					HTML_PAGE_RESULT.append(html_content)
 					logger.info(f"Closing the page {url.split('page=')[1]} ... ")
 					page.close()
@@ -245,7 +315,9 @@ class ScrapingBeeProxyProvider:
 	ENDPOINT = "https://app.scrapingbee.com/api/v1/"
 
 	@classmethod
-	def sync_scraper(cls, *, save_in: str, key_words: str, page_results: int) -> None:
+	def sync_scraper(
+		cls, *, save_in: str, key_words: str, page_results: int, api_key: str | None = None
+	) -> None:
 		"""
 		Initiates synchronous scraping via the ScrapingBee API based on the provided keywords.
 
@@ -259,13 +331,25 @@ class ScrapingBeeProxyProvider:
 		:type key_words: str
 		:param page_results: The number of pages to scrape.
 		:type page_results: int
+		:param api_key: A visitor-supplied ScrapingBee key to use instead of the
+			owner's `SCRAPINGBEE_API_KEY` from `.env`, if provided.
+		:type api_key: str | None
 		:return: None
 		:rtype: None
-		:raises RuntimeError: If no API key is set.
+		:raises RuntimeError: If no API key is set (neither `api_key` nor the
+			owner's `.env` key).
+		:raises ScrapingBeeKeyError: If ScrapingBee reports the resolved key
+			is out of credits (HTTP 429) or invalid/revoked/expired (HTTP
+			401) — callers should catch this before the generic
+			`RuntimeError` to show a specific "your key isn't working"
+			message rather than a generic scraping-failed one.
 		"""
-		if cls.SB_API_KEY == "":
+		resolved_key = _resolve_scrapingbee_key(api_key, cls.SB_API_KEY)
+		if resolved_key == "":
 			rprint("[red]You need to set your  API key to use ScrapingBee proxies ... [/red]")
 			raise RuntimeError("You need to set your ScrapingBee API key to use ScrapingBee proxies.")
+		global HTML_PAGE_RESULT
+		HTML_PAGE_RESULT.clear()
 		with Progress(
 			SpinnerColumn(finished_text="[bold green]finished ✓[/bold green]"),
 			*Progress.get_default_columns(),
@@ -280,21 +364,7 @@ class ScrapingBeeProxyProvider:
 			try:
 				for url in urls_pusher(words=key_words, stop_at=page_results):
 					logger.info(f"Loading page {url.split('page=')[1]} ... ")
-					response = api_request.get(
-						cls.ENDPOINT,
-						params={
-							"api_key": cls.SB_API_KEY,
-							"url": url,
-							"render_js": "true",
-							# premium_proxy is required for country_code to take
-							# effect (ScrapingBee docs) — pricier per-request
-							# (residential vs. datacenter proxy) than the plain
-							# default, but keeps prices in a single currency.
-							"premium_proxy": "true",
-							"country_code": TARGET_COUNTRY,
-						},
-						timeout=0,
-					)
+					response = _fetch_via_scrapingbee(api_request, cls.ENDPOINT, resolved_key, url)
 					if not response.ok:
 						logger.warning(
 							f"ScrapingBee request failed for page {url.split('page=')[1]} "
@@ -307,7 +377,6 @@ class ScrapingBeeProxyProvider:
 					progress.start_task(task)
 					html_content = response.text()
 					progress.update(task, advance=100 / page_results)
-					global HTML_PAGE_RESULT
 					HTML_PAGE_RESULT.append(html_content)
 					logger.info(f"Closing the page {url.split('page=')[1]} ... ")
 			finally:

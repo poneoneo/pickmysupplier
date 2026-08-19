@@ -4,3 +4,13 @@
 # loguru file sink for exceptions we catch explicitly with logger.exception.
 [client]
 showErrorDetails = "none"
+
+# Dark theme matching the reference design: near-black background, a
+# crimson/red accent for the active nav item and buttons.
+[theme]
+base = "dark"
+primaryColor = "#e63946"
+backgroundColor = "#0b0d12"
+secondaryBackgroundColor = "#151822"
+textColor = "#e6e6e6"
+font = "sans serif"

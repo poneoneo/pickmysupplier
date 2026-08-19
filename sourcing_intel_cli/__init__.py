@@ -1,4 +1,5 @@
 import os
+import sys
 
 from dotenv import load_dotenv
 from loguru import logger
@@ -10,6 +11,15 @@ BRIGHT_DATA_API_KEY: str = os.environ.get("BRIGHT_DATA_API_KEY", "")
 SCRAPINGBEE_API_KEY: str = os.environ.get("SCRAPINGBEE_API_KEY", "")
 GROQ_API_KEY: str = os.environ.get("GROQ_API_KEY", "")
 LOGURU_LEVEL: str | None = os.environ.get("LOGURU_LEVEL")
+
+# loguru auto-creates a default stderr handler (id 0) with diagnose=True,
+# which prints local variable values from the traceback's stack frames —
+# including a visitor's ScrapingBee API key, if it's a local variable on any
+# frame the exception passed through when `logger.exception(...)` is called.
+# Remove it and re-add an equivalent stderr sink with diagnose=False, closing
+# the same leak for the console that the file sink below closes for the file.
+logger.remove()
+logger.add(sys.stderr, level=LOGURU_LEVEL or "INFO", diagnose=False)
 
 # File sink so errors survive past the terminal that launched Streamlit —
 # app.py's uncaught-exception paths now show a friendly message on the page
