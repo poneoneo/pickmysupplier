@@ -14,8 +14,7 @@
 
 > **Projet portfolio personnel, non destiné à la commercialisation.** Le
 > code est sous licence MIT (voir [License](#license)), mais l'intention
-> reste éducative — pas un produit commercial. Voir
-> [`CLAUDE.md`](CLAUDE.md) pour tout l'historique de décisions du projet.
+> reste éducative — pas un produit commercial.
 
 ---
 
@@ -66,7 +65,6 @@ Ce projet est l'héritier direct de [`Alibaba-CLI-Scraper`](https://github.com/p
   avec repli sur un jeu de données de démo si le scraping en direct casse.
 
 D'autres améliorations sont prévues (voir [État du projet](#état-du-projet)).
-Historique complet des décisions dans [`CLAUDE.md`](CLAUDE.md).
 
 ## Fonctionnalités
 
@@ -114,7 +112,7 @@ Champs liés aux **produits** (`Product`) :
 |---|---|---|
 | `name` | `str` | Nom complet du produit (unique **par fournisseur**) |
 | `short_name` | `str \| None` | Version raccourcie du nom, générée par IA |
-| `alibaba_guranteed` | `bool` | Protégé par Trade Assurance *(nom conservé volontairement, voir `CLAUDE.md`)* |
+| `alibaba_guranteed` | `bool` | Protégé par Trade Assurance *(nom conservé volontairement pour rester cohérent avec le modèle et le code d'insertion)* |
 | `certifications` | `str` | Certifications listées |
 | `minimum_to_order` | `int` | Quantité minimale de commande (MOQ) |
 | `ordered_or_sold` | `int` | Nombre de commandes/ventes |
@@ -140,9 +138,6 @@ Modèles complets : [`sourcing_intel_cli/models.py`](sourcing_intel_cli/models.p
 5. engine_and_database.py → insère les lignes propres (rollback + skip sur doublon)
 6. app.py                 → lecture seule pour les graphiques et la recherche NL
 ```
-
-Détail complet du flux et des décisions d'architecture : voir
-[`CLAUDE.md`](CLAUDE.md#flux-de-données-bout-en-bout).
 
 ## Prérequis
 
@@ -230,7 +225,8 @@ Règles **déterministes**, aucun jugement LLM (`sourcing_intel_cli/data_quality
   les champs numériques non négatifs.
 
 Une ligne fautive est rejetée, le reste du lot est conservé — politique
-volontaire, voir [`CLAUDE.md`](CLAUDE.md#flux-de-données-bout-en-bout).
+volontaire, pour ne jamais perdre un scraping entier à cause d'une seule
+ligne mal formée.
 
 ## Développement
 
@@ -257,8 +253,8 @@ de ce README).
   suivi uniquement via l'historique Git et les Pull Requests.
 - Le scraping live et la recherche en langage naturel ont été validés avec
   de vrais appels ; le reste (rendu des graphiques avec de gros volumes
-  réels, etc.) n'a pas encore été testé au-delà de ce qui est documenté dans
-  [`CLAUDE.md`](CLAUDE.md#limitations-connues-non-résolues-intentionnellement).
+  réels, etc.) n'a pas encore été testé en conditions réelles au-delà de
+  l'usage courant.
 - **À venir** : versionning/changelog automatisé (Commitizen), packaging
   pipx pour un lancement en une commande, et d'autres itérations sur la
   qualité des données et les graphiques au fil de l'usage.
