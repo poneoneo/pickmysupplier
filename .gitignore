@@ -11,3 +11,4 @@ coverage.json
 htmlcov/
 logs/
 *.log
+screenshots/
