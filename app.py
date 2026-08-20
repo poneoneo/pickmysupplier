@@ -1,4 +1,4 @@
-"""Sourcing Intel — multi-page Streamlit app: scrape, validate, browse, and
+"""PickMySupplier — multi-page Streamlit app: scrape, validate, browse, and
 ask natural-language questions about product/supplier data.
 
 Four pages via st.navigation: Accueil (landing), Explorer (dataset picker +
@@ -173,10 +173,10 @@ def _validate_and_insert(
 
 def page_accueil() -> None:
 	"""Landing page: pitch, quota banner, links to the other pages."""
-	st.title("🔍 Sourcing Intel")
+	st.title("🔍 PickMySupplier")
 	st.markdown(
 		"""
-		**Sourcing Intel** scrape une marketplace B2B, valide et stocke les
+		**PickMySupplier** scrape une marketplace B2B, valide et stocke les
 		données, puis te laisse les explorer par recherche en langage
 		naturel et par graphiques — comme un·e acheteur·se qui compare des
 		centaines de fournisseurs sans ouvrir un seul onglet en plus.
@@ -567,7 +567,7 @@ def page_aide() -> None:
 # Navigation
 # ---------------------------------------------------------------------------
 
-st.set_page_config(page_title="Sourcing Intel", layout="wide")
+st.set_page_config(page_title="PickMySupplier", layout="wide")
 
 PAGE_ACCUEIL = st.Page(page_accueil, title="Accueil", icon="🏠", default=True)
 PAGE_EXPLORER = st.Page(page_explorer, title="Explorer", icon="🔍")
@@ -575,4 +575,9 @@ PAGE_SCRAPER = st.Page(page_scraper, title="Scraper", icon="🕷️")
 PAGE_AIDE = st.Page(page_aide, title="Aide", icon="❓")
 
 pg = st.navigation([PAGE_ACCUEIL, PAGE_EXPLORER, PAGE_SCRAPER, PAGE_AIDE])
+
+st.sidebar.link_button(
+	"☕ Soutenir sur Ko-fi", "https://ko-fi.com/poneoneo", use_container_width=True
+)
+
 pg.run()
