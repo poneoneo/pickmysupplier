@@ -65,8 +65,7 @@ Ce projet est l'héritier direct de [`Alibaba-CLI-Scraper`](https://github.com/p
   avant insertion (aucun jugement laissé à un LLM) ;
 - les graphiques sont passés de Plotly à **ECharts**, avec un thème sombre
   cohérent sur toute l'app ;
-- deux fournisseurs de proxy interchangeables (BrightData, ScrapingBee),
-  avec repli sur un jeu de données de démo si le scraping en direct casse.
+- repli sur un jeu de données de démo si le scraping en direct casse.
 
 D'autres améliorations sont prévues (voir [État du projet](#état-du-projet)).
 
@@ -75,9 +74,10 @@ Le projet précédent m'a énormément appris, et j'ai pris beaucoup de plaisir
 
 ## Fonctionnalités
 
-- **2 fournisseurs de proxy interchangeables** pour le scraping : BrightData
-  (Scraping Browser, CDP) et ScrapingBee (API REST, rendu JS côté serveur) —
-  avec repli automatique et message clair si le quota/la clé pose problème.
+- **Scraping via ScrapingBee** (API REST, rendu JS côté serveur, clé BYO
+  gratuite) — avec message clair si le quota/la clé pose problème.
+- **Export des données brutes en CSV**, directement depuis la page Explorer,
+  pour chaque jeu de données.
 - **Recherche en langage naturel sans exécution de code arbitraire** : la
   question est transformée par un LLM (Groq, JSON mode) en une petite spec
   structurée (`filtres`, `tri`, `colonnes`), exécutée nous-mêmes avec pandas
@@ -138,7 +138,7 @@ Modèles complets : [`sourcing_intel_cli/models.py`](sourcing_intel_cli/models.p
 ## Pipeline de données
 
 ```
-1. proxies_providers.py   → scrape des pages HTML brutes (BrightData/ScrapingBee)
+1. proxies_providers.py   → scrape des pages HTML brutes (ScrapingBee)
 2. html_to_disk.py        → sauvegarde sur disque (scraped_pages/<mots-clés>/)
 3. scrape_from_disk.py    → relit le HTML, extrait le JSON embarqué → SupplierDict/ProductDict
 4. data_quality.py        → valide chaque ligne (rejette la ligne fautive, garde le reste)
@@ -152,8 +152,8 @@ Modèles complets : [`sourcing_intel_cli/models.py`](sourcing_intel_cli/models.p
 - Une clé API [Groq](https://console.groq.com) (gratuite) pour la recherche
   en langage naturel et le résumé des noms de produits
 - Une clé API [ScrapingBee](https://www.scrapingbee.com) (plan gratuit
-  disponible — voir la page **Aide** de l'app pour le guide pas-à-pas) ou
-  [BrightData](https://get.brightdata.com) pour le scraping
+  disponible — voir la page **Aide** de l'app pour le guide pas-à-pas) pour
+  le scraping
 
 ## Installation
 
@@ -173,11 +173,13 @@ globalement.
 Fichier `.env` à la racine, non committé (voir `.gitignore`) :
 
 ```
-BRIGHT_DATA_API_KEY=
 SCRAPINGBEE_API_KEY=
 GROQ_API_KEY=
 LOGURU_LEVEL=CRITICAL
 ```
+
+Sur un hébergement sans `.env` (ex. Streamlit Community Cloud), les deux clés
+API peuvent aussi être fournies via les secrets de la plateforme (`st.secrets`).
 
 ## Utiliser l'application
 
@@ -192,7 +194,8 @@ ou personnelle) est épuisé, liens rapides vers les trois autres pages.
 ### 🔍 Explorer
 
 Sélectionne un jeu de données (une base par recherche passée, y compris la
-démo), puis deux onglets :
+démo), avec un bouton pour télécharger ce jeu de données brut en CSV, puis
+deux onglets :
 
 - **Recherche en langage naturel** — pose une question en français
   (ex. *"quels sont les 5 fournisseurs les mieux notés en Chine ?"*).
@@ -205,8 +208,8 @@ démo), puis deux onglets :
 
 ### 🕷️ Scraper
 
-Lance un scraping en direct (mots-clés + fournisseur de proxy + nombre de
-pages), avec un champ optionnel pour utiliser ta propre clé ScrapingBee.
+Lance un scraping en direct (mots-clés + nombre de pages) via ScrapingBee,
+avec un champ optionnel pour utiliser ta propre clé.
 Un bouton **"Charger le jeu de données de démo"** permet d'explorer l'app
 sans dépendre de la disponibilité du site cible (structure susceptible de
 changer). Chaque scraping (ou chargement démo) passe par le même pipeline de
@@ -265,17 +268,15 @@ de ce README).
 
 ### Prochaines étapes
 
-- **Export des données brutes** : permettre à chaque utilisateur de
-  télécharger directement le jeu de données de sa recherche (CSV), sans
-  passer par la base SQLite.
-- **Retrait de BrightData** : ne garder que ScrapingBee comme fournisseur de
-  proxy — plus simple à onboarder (clé BYO gratuite) que BrightData
-  (Scraping Browser payant).
 - **Hébergement public** : déployer l'app quelque part d'accessible en ligne
-  plutôt que de devoir la lancer en local.
+  plutôt que de devoir la lancer en local — le code est déjà prêt (repli
+  `st.secrets` pour les clés API).
 - Versionning/changelog automatisé (Commitizen), packaging pipx, et
   d'autres itérations sur la qualité des données et les graphiques au fil
   de l'usage.
+
+✅ Déjà fait : export des données brutes en CSV, retrait de BrightData
+(ScrapingBee reste le seul fournisseur de proxy).
 
 **Une idée pour rendre l'outil plus utile ?** Ouvre une
 [issue](https://github.com/poneoneo/pickmysupplier/issues/new) pour

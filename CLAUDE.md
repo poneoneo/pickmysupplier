@@ -44,10 +44,12 @@ Thème sombre (`.streamlit/config.toml`).
 
 ## Stack technique
 
-- **Scraping** : Playwright (navigateur headless ou client HTTP `playwright.request`),
-  proxies rotatifs via BrightData (CDP, nécessite une clé Scraping Browser active) ou
-  ScrapingBee (API REST, rendu JS côté serveur) — deux providers interchangeables.
-  Syphoon a été retiré : le service n'existe plus, remplacé par ScrapingBee.
+- **Scraping** : Playwright (`playwright.request` comme client HTTP pur, pas de
+  navigateur piloté), via ScrapingBee (API REST, rendu JS côté serveur).
+  Syphoon a été retiré (service disparu) puis BrightData (CDP, Scraping
+  Browser) a aussi été retiré le 2026-08-20 à la demande de l'utilisateur —
+  ScrapingBee (clé BYO gratuite) est maintenant le seul fournisseur de proxy,
+  voir Historique des décisions.
 - **Parsing HTML** : `selectolax`
 - **Modèles/DB** : SQLModel + SQLAlchemy, backend SQLite uniquement
   (`create_db_engine` accepte n'importe quelle URL SQLAlchemy, mais aucune
@@ -88,7 +90,7 @@ sourcing_intel_cli_project/
 ├── app.py                          # Point d'entrée unique (Streamlit)
 ├── requirements.txt
 └── sourcing_intel_cli/
-    ├── __init__.py                  # Charge .env : BRIGHT_DATA_API_KEY, SCRAPINGBEE_API_KEY, GROQ_API_KEY, LOGURU_LEVEL
+    ├── __init__.py                  # Charge .env (ou st.secrets en repli) : SCRAPINGBEE_API_KEY, GROQ_API_KEY, LOGURU_LEVEL
     ├── nl_search.py                    # build_query_spec() (Groq, JSON mode) + apply_query_spec()
     │                                     (exécution pandas déterministe) + build_value_hints()
     ├── chart_builder.py                  # suggest_chart_type() + build_chart() : sélection de
@@ -107,8 +109,8 @@ sourcing_intel_cli_project/
     ├── scrape_from_disk.py               # PageParser: HTML brut -> ProductDict/SupplierDict
     ├── html_to_disk.py                    # Extraction JSON depuis le HTML scrapé (json_hunter)
     ├── utils_scrapping.py                  # Parsing de champs spécifiques (prix, certifications, etc.)
-    ├── proxies_providers.py                 # BrightDataProxyProvider, ScrapingBeeProxyProvider (scraping)
-    ├── proxies_utils.py                      # urls_pusher, goto_task (utilitaires Playwright)
+    ├── proxies_providers.py                 # ScrapingBeeProxyProvider (scraping)
+    ├── proxies_utils.py                      # urls_pusher (utilitaire Playwright)
     └── pays_data.json                         # Table de correspondance code pays -> nom complet
 ```
 
@@ -191,11 +193,14 @@ chaque scraping (ou chargement du jeu de démo), et écrit sur disque via
 ## Variables d'environnement (`.env` à la racine, non committé)
 
 ```
-BRIGHT_DATA_API_KEY=
 SCRAPINGBEE_API_KEY=
 GROQ_API_KEY=
 LOGURU_LEVEL=CRITICAL
 ```
+
+Sur un hébergement sans `.env` (ex. Streamlit Community Cloud), `SCRAPINGBEE_API_KEY`
+et `GROQ_API_KEY` peuvent aussi venir de `st.secrets` — voir le repli dans
+`sourcing_intel_cli/__init__.py`.
 
 ## Conventions de code à respecter
 
@@ -250,18 +255,22 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
   `commands.py`/`db-init mysql`. `create_db_engine` reste générique
   (accepte toute URL SQLAlchemy) mais plus rien ne construit d'URL MySQL
   côté interface.
+- **BrightData retiré le 2026-08-20** à la demande de l'utilisateur —
+  `BrightDataProxyProvider`, `_with_country_targeting`, `goto_task`
+  (`proxies_utils.py`, devenu mort avec le retrait) et `BRIGHT_DATA_API_KEY`
+  ont tous été supprimés. ScrapingBee (clé BYO gratuite) est maintenant le
+  seul fournisseur de proxy — plus de sélecteur dans la page Scraper.
 
 ## Prochaines étapes possibles (non commencées)
 
 - Commitizen (version bump + changelog automatique) et packaging pipx —
   tous deux explicitement reportés par l'utilisateur, voir
   `project_deferred_packaging_versioning` en mémoire
-- Export des données brutes par l'utilisateur (CSV) directement depuis
-  l'app, sans passer par la base SQLite
-- Retrait de BrightData comme fournisseur de proxy — ne garder que
-  ScrapingBee (clé BYO gratuite, plus simple à onboarder que le Scraping
-  Browser payant de BrightData)
-- Hébergement public de l'app (actuellement local uniquement)
+- **Hébergement public de l'app** : le code est prêt (repli `st.secrets`
+  pour les clés, voir Variables d'environnement) mais l'app tourne encore
+  uniquement en local — déployer (ex. Streamlit Community Cloud) est une
+  action côté compte de l'utilisateur, pas quelque chose que Claude peut
+  faire seul.
 
-Annoncées dans le README (section "État du projet" / "Prochaines
-étapes") le 2026-08-20, à la demande de l'utilisateur.
+Export CSV et retrait de BrightData (annoncés dans le README le 2026-08-20)
+sont maintenant faits — voir Historique des décisions.
