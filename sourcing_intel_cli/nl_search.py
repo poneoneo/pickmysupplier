@@ -112,7 +112,7 @@ def build_query_spec(question: str, df: pd.DataFrame) -> dict:
 	"""
 	if not GROQ_API_KEY:
 		raise RuntimeError(
-			"GROQ_API_KEY n'est pas défini — la recherche en langage naturel est indisponible."
+			"GROQ_API_KEY is not set — natural-language search is unavailable."
 		)
 	schema = "\n".join(f"- {col}: {dtype}" for col, dtype in df.dtypes.items())
 	system_prompt = _QUERY_SPEC_SYSTEM_PROMPT.format(schema=schema, hints=build_value_hints(df))
@@ -131,7 +131,7 @@ def build_query_spec(question: str, df: pd.DataFrame) -> dict:
 	try:
 		return json.loads(content)
 	except (json.JSONDecodeError, TypeError) as e:
-		raise RuntimeError(f"Réponse du modèle non exploitable : {e}") from e
+		raise RuntimeError(f"Unusable response from the model: {e}") from e
 
 
 _FILTER_OPS = {

@@ -85,9 +85,9 @@ def _fetch_via_scrapingbee(api_request, endpoint: str, api_key: str, url: str):
 		timeout=0,
 	)
 	if response.status == 429:
-		raise ScrapingBeeKeyError("La clé ScrapingBee a épuisé son quota de crédits (HTTP 429).")
+		raise ScrapingBeeKeyError("The ScrapingBee key has run out of credits (HTTP 429).")
 	if response.status == 401:
-		raise ScrapingBeeKeyError("La clé ScrapingBee est invalide, expirée ou révoquée (HTTP 401).")
+		raise ScrapingBeeKeyError("The ScrapingBee key is invalid, expired, or revoked (HTTP 401).")
 	return response
 
 

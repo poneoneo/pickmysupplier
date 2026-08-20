@@ -242,13 +242,13 @@ def _describe_correlation(rho: float) -> str:
 
 _KEYWORD_TO_CHART_TYPE = (
 	(("distribution", "répartition", "repartition"), "histogram"),
-	(("dispersion", "écart", "ecart", "boîte", "boite"), "box"),
-	(("corrélation", "correlation", " vs ", "relation entre"), "scatter"),
-	(("top", "meilleur", "classement", "compar"), "bar"),
-	# Placed after "compar" deliberately: a question like "compare le prix
-	# moyen par pays" must still resolve to "bar", not "map" — "compar" is
-	# checked first in this tuple's order.
-	(("carte", "map", "géographique", "quels pays"), "map"),
+	(("dispersion", "écart", "ecart", "boîte", "boite", "box plot", "spread"), "box"),
+	(("corrélation", "correlation", " vs ", "relation entre", "relationship between"), "scatter"),
+	(("top", "meilleur", "best", "classement", "compar", "ranking"), "bar"),
+	# Placed after "compar"/"ranking" deliberately: a question like "compare
+	# the average price by country" must still resolve to "bar", not "map" —
+	# this tuple's order is checked top to bottom.
+	(("carte", "map", "géographique", "quels pays", "which countries", "countries are"), "map"),
 )
 
 
