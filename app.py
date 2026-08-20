@@ -38,11 +38,7 @@ from sourcing_intel_cli.engine_and_database import (
 	save_all_changes,
 )
 from sourcing_intel_cli.nl_search import apply_query_spec, build_query_spec
-from sourcing_intel_cli.proxies_providers import (
-	BrightDataProxyProvider,
-	ScrapingBeeProxyProvider,
-	ScrapingBeeKeyError,
-)
+from sourcing_intel_cli.proxies_providers import ScrapingBeeProxyProvider, ScrapingBeeKeyError
 from sourcing_intel_cli.product_naming import summarize_product_names
 from sourcing_intel_cli.scrape_from_disk import PageParser
 from sourcing_intel_cli.typed_datas import ProductDict, SupplierDict
@@ -230,6 +226,14 @@ def page_explorer() -> None:
 	if df.empty:
 		st.info("Ce jeu de données est vide.")
 		return
+
+	st.download_button(
+		"⬇️ Télécharger ce jeu de données (CSV)",
+		data=df.to_csv(index=False).encode("utf-8"),
+		file_name=f"{selected_label}.csv",
+		mime="text/csv",
+		help="Le jeu de données brut affiché ci-dessous — produits joints à leur fournisseur.",
+	)
 
 	tab_search, tab_charts = st.tabs(["💬 Recherche en langage naturel", "📊 Graphiques"])
 
@@ -440,40 +444,28 @@ def page_scraper() -> None:
 			)
 
 	keywords = st.text_input("Mots-clés", placeholder="ex: wireless earbuds")
-	provider_name = st.selectbox("Fournisseur de proxy", ["scrapingbee", "brightdata"])
 	page_results = st.number_input("Nombre de pages", min_value=1, max_value=50, value=5)
 
-	user_scrapingbee_key = None
-	if provider_name == "scrapingbee":
-		user_scrapingbee_key = st.text_input(
-			"Ta clé ScrapingBee (facultatif)",
-			type="password",
-			help="Laisse vide pour utiliser la clé de démo du site. Voir la page "
-			"Aide pour savoir où trouver la tienne, gratuitement.",
-			key="user_scrapingbee_key",
-		)
+	user_scrapingbee_key = st.text_input(
+		"Ta clé ScrapingBee (facultatif)",
+		type="password",
+		help="Laisse vide pour utiliser la clé de démo du site. Voir la page "
+		"Aide pour savoir où trouver la tienne, gratuitement.",
+		key="user_scrapingbee_key",
+	)
 
 	if st.button("Scraper en direct", type="primary", disabled=not keywords):
-		provider_cls = {
-			"brightdata": BrightDataProxyProvider,
-			"scrapingbee": ScrapingBeeProxyProvider,
-		}[provider_name]
 		slug = slugify(keywords)
 		save_in_folder = f"scraped_pages/{slug}"
 
 		with st.spinner("Scraping en cours (peut prendre plusieurs minutes)..."):
 			try:
-				if provider_name == "scrapingbee":
-					provider_cls.sync_scraper(
-						save_in=save_in_folder,
-						key_words=keywords,
-						page_results=int(page_results),
-						api_key=user_scrapingbee_key or None,
-					)
-				else:
-					provider_cls.sync_scraper(
-						save_in=save_in_folder, key_words=keywords, page_results=int(page_results)
-					)
+				ScrapingBeeProxyProvider.sync_scraper(
+					save_in=save_in_folder,
+					key_words=keywords,
+					page_results=int(page_results),
+					api_key=user_scrapingbee_key or None,
+				)
 			except ScrapingBeeKeyError as e:
 				logger.warning(f"ScrapingBee key problem: {e}")
 				st.session_state["sb_quota_exhausted"] = True

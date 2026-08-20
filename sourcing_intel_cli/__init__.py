@@ -7,10 +7,25 @@ from loguru import logger
 __version__ = "0.2.0"
 
 load_dotenv(override=True)
-BRIGHT_DATA_API_KEY: str = os.environ.get("BRIGHT_DATA_API_KEY", "")
 SCRAPINGBEE_API_KEY: str = os.environ.get("SCRAPINGBEE_API_KEY", "")
 GROQ_API_KEY: str = os.environ.get("GROQ_API_KEY", "")
 LOGURU_LEVEL: str | None = os.environ.get("LOGURU_LEVEL")
+
+# Hosted platforms like Streamlit Community Cloud have no `.env` file —
+# secrets are set through the platform's own UI instead and only reach the
+# app via `st.secrets`, not `os.environ`. Fall back to that here (import
+# guarded: this module loads outside a real Streamlit run too, e.g. in
+# tests, where `st.secrets` would otherwise raise) so the rest of the
+# codebase can keep reading these two module-level constants unchanged
+# regardless of where the app is running.
+if not SCRAPINGBEE_API_KEY or not GROQ_API_KEY:
+	try:
+		import streamlit as st
+
+		SCRAPINGBEE_API_KEY = SCRAPINGBEE_API_KEY or st.secrets.get("SCRAPINGBEE_API_KEY", "")
+		GROQ_API_KEY = GROQ_API_KEY or st.secrets.get("GROQ_API_KEY", "")
+	except Exception:
+		pass
 
 # loguru auto-creates a default stderr handler (id 0) with diagnose=True,
 # which prints local variable values from the traceback's stack frames —
