@@ -43,7 +43,7 @@ jobs:
         id: tests
         if: always()
         run: |
-          if python -m pytest --cov=sourcing_intel_cli --cov-report=term-missing --cov-report=json -q; then
+          if python -m pytest --cov=sourcing_intel_cli --cov-report=term-missing --cov-report=json --cov-report=xml -q; then
             echo "✅ Tous les tests sont passés !"
             echo "status=✅" >> "$GITHUB_OUTPUT"
           else
@@ -51,6 +51,14 @@ jobs:
             echo "status=❌" >> "$GITHUB_OUTPUT"
             exit 1
           fi
+
+      - name: 📤 Upload coverage vers Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
       - name: 📊 Coverage
         id: coverage
