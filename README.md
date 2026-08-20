@@ -1,6 +1,7 @@
 # PickMySupplier
 
 <p align="center"><b>Scrape a B2B marketplace, validate the data, and query it in plain English.</b></p>
+<p align="center">🚀 <a href="https://pickmysupplier.streamlit.app">Live demo</a></p>
 
 <div align="center">
 
@@ -267,14 +268,12 @@ of this README).
 
 ### Next steps
 
-- **Public hosting**: deployed on Streamlit Community Cloud, but the app
-  is currently restricted to specific viewers rather than public — see
-  the app's sharing settings on Streamlit Cloud to open it up.
 - Automated versioning/changelog (Commitizen), pipx packaging, and
   further iterations on data quality and charts as usage grows.
 
 ✅ Already done: raw data export to CSV, removal of BrightData
-(ScrapingBee is now the only proxy provider).
+(ScrapingBee is now the only proxy provider), public hosting — live at
+[pickmysupplier.streamlit.app](https://pickmysupplier.streamlit.app).
 
 **Got an idea to make this more useful?** Open an
 [issue](https://github.com/poneoneo/pickmysupplier/issues/new) to
