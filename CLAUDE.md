@@ -256,3 +256,12 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
 - Commitizen (version bump + changelog automatique) et packaging pipx —
   tous deux explicitement reportés par l'utilisateur, voir
   `project_deferred_packaging_versioning` en mémoire
+- Export des données brutes par l'utilisateur (CSV) directement depuis
+  l'app, sans passer par la base SQLite
+- Retrait de BrightData comme fournisseur de proxy — ne garder que
+  ScrapingBee (clé BYO gratuite, plus simple à onboarder que le Scraping
+  Browser payant de BrightData)
+- Hébergement public de l'app (actuellement local uniquement)
+
+Annoncées dans le README (section "État du projet" / "Prochaines
+étapes") le 2026-08-20, à la demande de l'utilisateur.
