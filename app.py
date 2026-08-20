@@ -173,7 +173,7 @@ def _validate_and_insert(
 
 def page_accueil() -> None:
 	"""Landing page: pitch, quota banner, links to the other pages."""
-	st.title("🔍 PickMySupplier")
+	st.title("🤏🛒 PickMySupplier")
 	st.markdown(
 		"""
 		**PickMySupplier** scrape une marketplace B2B, valide et stocke les
@@ -567,12 +567,14 @@ def page_aide() -> None:
 # Navigation
 # ---------------------------------------------------------------------------
 
-st.set_page_config(page_title="PickMySupplier", layout="wide")
+st.set_page_config(page_title="PickMySupplier", page_icon="🤏🛒", layout="wide")
 
 PAGE_ACCUEIL = st.Page(page_accueil, title="Accueil", icon="🏠", default=True)
 PAGE_EXPLORER = st.Page(page_explorer, title="Explorer", icon="🔍")
 PAGE_SCRAPER = st.Page(page_scraper, title="Scraper", icon="🕷️")
 PAGE_AIDE = st.Page(page_aide, title="Aide", icon="❓")
+
+st.sidebar.markdown("## 🤏🛒 PickMySupplier")
 
 pg = st.navigation([PAGE_ACCUEIL, PAGE_EXPLORER, PAGE_SCRAPER, PAGE_AIDE])
 
