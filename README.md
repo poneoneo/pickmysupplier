@@ -9,6 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![Streamlit](https://img.shields.io/badge/streamlit-1.36%2B-FF4B4B?logo=streamlit&logoColor=white)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/poneoneo)
 
 </div>
 
@@ -35,7 +36,9 @@
 - [Agent de qualité des données](#agent-de-qualité-des-données)
 - [Développement](#développement)
 - [État du projet](#état-du-projet)
+  - [Prochaines étapes](#prochaines-étapes)
 - [Contribuer](#contribuer)
+- [Soutenir le projet](#soutenir-le-projet)
 - [License](#license)
 
 ## À propos
@@ -255,15 +258,35 @@ de ce README).
   de vrais appels ; le reste (rendu des graphiques avec de gros volumes
   réels, etc.) n'a pas encore été testé en conditions réelles au-delà de
   l'usage courant.
-- **À venir** : versionning/changelog automatisé (Commitizen), packaging
-  pipx pour un lancement en une commande, et d'autres itérations sur la
-  qualité des données et les graphiques au fil de l'usage.
+
+### Prochaines étapes
+
+- **Export des données brutes** : permettre à chaque utilisateur de
+  télécharger directement le jeu de données de sa recherche (CSV), sans
+  passer par la base SQLite.
+- **Retrait de BrightData** : ne garder que ScrapingBee comme fournisseur de
+  proxy — plus simple à onboarder (clé BYO gratuite) que BrightData
+  (Scraping Browser payant).
+- **Hébergement public** : déployer l'app quelque part d'accessible en ligne
+  plutôt que de devoir la lancer en local.
+- Versionning/changelog automatisé (Commitizen), packaging pipx, et
+  d'autres itérations sur la qualité des données et les graphiques au fil
+  de l'usage.
+
+**Une idée pour rendre l'outil plus utile ?** Ouvre une
+[issue](https://github.com/poneoneo/pickmysupplier/issues/new) pour
+proposer ce que tu aimerais voir implémenté.
 
 ## Contribuer
 
 Voir [`CONTRIBUTING.md`](CONTRIBUTING.md) pour la convention de commits
 (Gitmoji) et de branches utilisée sur ce projet — elle s'applique à tous les
 commits, y compris ceux de l'auteur principal.
+
+## Soutenir le projet
+
+Si cet outil t'a été utile ou que tu apprécies le travail,
+[☕ un café sur Ko-fi](https://ko-fi.com/poneoneo) fait toujours plaisir.
 
 ## License
 
