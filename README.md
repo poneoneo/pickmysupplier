@@ -12,10 +12,9 @@
 
 </div>
 
-> **Projet portfolio personnel, non destiné à la commercialisation.** Réalisé
-> par [O'Neal](https://github.com/poneoneo) en reconversion vers l'analyse
-> de données. Le code est sous licence MIT (voir [License](#license)), mais
-> l'intention reste éducative — pas un produit commercial. Voir
+> **Projet portfolio personnel, non destiné à la commercialisation.** Le
+> code est sous licence MIT (voir [License](#license)), mais l'intention
+> reste éducative — pas un produit commercial. Voir
 > [`CLAUDE.md`](CLAUDE.md) pour tout l'historique de décisions du projet.
 
 ---
@@ -49,13 +48,25 @@ déterministe, la stocke en base SQLite, puis te laisse l'explorer par
 acheteur·se qui compare des centaines de fournisseurs sans ouvrir un seul
 onglet en plus.
 
-Ancien nom du projet : `aba_cli_scrapper` / `Alibaba-CLI-Scraper` — renommé
-pour retirer toute référence à la marque Alibaba après une réflexion sur les
-risques juridiques du scraping de marketplace (voir
-[`CLAUDE.md`](CLAUDE.md#contexte-et-objectif-du-projet) pour le détail). Le
-projet a aussi perdu sa couche CLI (Typer/Click) et son serveur MCP en cours
-de route, au profit d'une seule interface Streamlit — volontairement plus
-simple à maintenir qu'un outil multi-interfaces.
+Ce projet est l'héritier direct de [`Alibaba-CLI-Scraper`](https://github.com/poneoneo/Alibaba-CLI-Scraper)
+(alias `aba_cli_scrapper`), repensé et amélioré sur plusieurs plans :
+
+- une **seule interface Streamlit** remplace l'ancien trio CLI (Typer/Click)
+  + serveur MCP + TUI — plus simple à maintenir, plus rapide à prendre en
+  main ;
+- la recherche en langage naturel n'exécute plus de code généré à la volée
+  par un LLM (`datahorse`/`df.chat()`) — elle produit une petite spec
+  structurée (filtres/tri/colonnes) exécutée nous-mêmes avec pandas, de
+  façon déterministe et sans risque d'exécution arbitraire ;
+- un **agent de qualité des données déterministe** valide chaque ligne
+  avant insertion (aucun jugement laissé à un LLM) ;
+- les graphiques sont passés de Plotly à **ECharts**, avec un thème sombre
+  cohérent sur toute l'app ;
+- deux fournisseurs de proxy interchangeables (BrightData, ScrapingBee),
+  avec repli sur un jeu de données de démo si le scraping en direct casse.
+
+D'autres améliorations sont prévues (voir [État du projet](#état-du-projet)).
+Historique complet des décisions dans [`CLAUDE.md`](CLAUDE.md).
 
 ## Fonctionnalités
 
@@ -248,6 +259,9 @@ de ce README).
   de vrais appels ; le reste (rendu des graphiques avec de gros volumes
   réels, etc.) n'a pas encore été testé au-delà de ce qui est documenté dans
   [`CLAUDE.md`](CLAUDE.md#limitations-connues-non-résolues-intentionnellement).
+- **À venir** : versionning/changelog automatisé (Commitizen), packaging
+  pipx pour un lancement en une commande, et d'autres itérations sur la
+  qualité des données et les graphiques au fil de l'usage.
 
 ## Contribuer
 
