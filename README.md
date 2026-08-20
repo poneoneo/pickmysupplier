@@ -1,4 +1,4 @@
-# Sourcing Intel
+# PickMySupplier
 
 <p align="center"><b>Scrape une marketplace B2B, valide les données, et discute-les en langage naturel.</b></p>
 
@@ -44,7 +44,7 @@
 
 ## À propos
 
-**Sourcing Intel** est une application Streamlit qui scrape une marketplace
+**PickMySupplier** est une application Streamlit qui scrape une marketplace
 B2B (produits + fournisseurs), valide chaque ligne avec un agent de qualité
 déterministe, la stocke en base SQLite, puis te laisse l'explorer par
 **recherche en langage naturel** et par **graphiques** — comme un·e
