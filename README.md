@@ -52,7 +52,9 @@ acheteur·se qui compare des centaines de fournisseurs sans ouvrir un seul
 onglet en plus.
 
 Ce projet est l'héritier direct de [`Alibaba-CLI-Scraper`](https://github.com/poneoneo/Alibaba-CLI-Scraper)
-(alias `aba_cli_scrapper`), repensé et amélioré sur plusieurs plans :
+(alias `aba_cli_scrapper` —
+![GitHub Repo stars](https://img.shields.io/github/stars/poneoneo/Alibaba-CLI-Scraper?style=flat&label=%E2%98%85)),
+repensé et amélioré sur plusieurs plans :
 
 - une **seule interface Streamlit** remplace l'ancien trio CLI (Typer/Click)
   + serveur MCP + TUI — plus simple à maintenir, plus rapide à prendre en
