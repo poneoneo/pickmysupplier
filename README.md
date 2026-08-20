@@ -39,6 +39,7 @@
   - [Prochaines étapes](#prochaines-étapes)
 - [Contribuer](#contribuer)
 - [Soutenir le projet](#soutenir-le-projet)
+- [Remerciements](#remerciements)
 - [License](#license)
 
 ## À propos
@@ -68,6 +69,9 @@ Ce projet est l'héritier direct de [`Alibaba-CLI-Scraper`](https://github.com/p
   avec repli sur un jeu de données de démo si le scraping en direct casse.
 
 D'autres améliorations sont prévues (voir [État du projet](#état-du-projet)).
+
+Le projet précédent m'a énormément appris, et j'ai pris beaucoup de plaisir
+à le construire — celui-ci en est la suite logique.
 
 ## Fonctionnalités
 
@@ -287,6 +291,14 @@ commits, y compris ceux de l'auteur principal.
 
 Si cet outil t'a été utile ou que tu apprécies le travail,
 [☕ un café sur Ko-fi](https://ko-fi.com/poneoneo) fait toujours plaisir.
+
+## Remerciements
+
+Merci à [DataHorse](https://github.com/DeDolphins/DataHorse), utilisé dans
+une version antérieure de la recherche en langage naturel (voir
+[Fonctionnalités](#fonctionnalités)) et depuis remplacé par une approche
+maison. Il n'est plus dans le code aujourd'hui, mais c'est ce qui a rendu
+ce projet possible au départ.
 
 ## License
 
