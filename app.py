@@ -123,35 +123,35 @@ def _validate_and_insert(
 		search, so different searches' results never mix.
 	:type db_name: str
 	"""
-	with st.spinner("Validation qualité..."):
+	with st.spinner("Running data quality checks..."):
 		suppliers, products, issues = run_quality_checks(raw_suppliers, raw_products)
 		write_quality_report(issues)
 
 	if issues:
-		st.warning(f"{len(issues)} ligne(s) rejetée(s) par l'agent de qualité — voir détail ci-dessous.")
-		with st.expander("Détail des rejets"):
+		st.warning(f"{len(issues)} row(s) rejected by the quality agent — see details below.")
+		with st.expander("Rejection details"):
 			st.dataframe(
 				pd.DataFrame(
 					[
-						{"entité": i.entity, "id": i.identifier, "champ": i.field, "raison": i.reason}
+						{"entity": i.entity, "id": i.identifier, "field": i.field, "reason": i.reason}
 						for i in issues
 					]
 				)
 			)
 	else:
-		st.success("Aucun problème de qualité détecté.")
+		st.success("No quality issues detected.")
 
 	if not suppliers and not products:
-		st.error("Tout a été rejeté, rien à insérer.")
+		st.error("Everything was rejected, nothing to insert.")
 		st.stop()
 
 	if products:
-		with st.spinner("Résumé des noms de produits trop longs..."):
+		with st.spinner("Summarizing product names that are too long..."):
 			short_names = summarize_product_names([p["name"] for p in products])
 			for product in products:
 				product["short_name"] = short_names[product["name"]]
 
-	with st.spinner("Écriture en base..."):
+	with st.spinner("Writing to the database..."):
 		try:
 			engine = create_db_engine(db_name=db_name)
 			save_all_changes(engine_db=engine, sql_model=SQLModel)
@@ -159,10 +159,10 @@ def _validate_and_insert(
 			add_products_to_db(products=products, engine_db=engine)
 		except Exception as e:  # noqa: BLE001
 			logger.exception("Database write failed")
-			st.error(f"L'écriture en base a échoué : {e}\n\nVoir logs/app.log pour le détail.")
+			st.error(f"The database write failed: {e}\n\nSee logs/app.log for details.")
 			st.stop()
 
-	st.success(f"{len(suppliers)} fournisseur(s) et {len(products)} produit(s) ajoutés.")
+	st.success(f"{len(suppliers)} supplier(s) and {len(products)} product(s) added.")
 	st.cache_data.clear()
 
 
@@ -176,139 +176,139 @@ def page_accueil() -> None:
 	st.title("🤏🛒 PickMySupplier")
 	st.markdown(
 		"""
-		**PickMySupplier** scrape une marketplace B2B, valide et stocke les
-		données, puis te laisse les explorer par recherche en langage
-		naturel et par graphiques — comme un·e acheteur·se qui compare des
-		centaines de fournisseurs sans ouvrir un seul onglet en plus.
+		**PickMySupplier** scrapes a B2B marketplace, validates and stores
+		the data, then lets you explore it through natural-language search
+		and charts — like a buyer comparing hundreds of suppliers without
+		opening a single extra tab.
 
-		Projet de portfolio, à but éducatif — pas un produit commercial.
+		Portfolio project, for educational purposes — not a commercial product.
 		"""
 	)
 	if st.session_state.get("sb_quota_exhausted"):
 		if st.session_state.get("sb_quota_exhausted_own_key"):
 			st.warning(
-				"⚠️ Ta clé ScrapingBee ne fonctionne pas (quota de crédits épuisé, "
-				"ou clé invalide/expirée) — vérifie ton compte ScrapingBee ou réessaie plus tard."
+				"⚠️ Your ScrapingBee key isn't working (out of credits, "
+				"or invalid/expired) — check your ScrapingBee account or try again later."
 			)
 		else:
 			st.warning(
-				"⚠️ La clé ScrapingBee de démo ne fonctionne pas pour l'instant "
-				"(quota épuisé ou clé expirée) — récupère la tienne gratuitement, "
-				"voir la page **Aide**."
+				"⚠️ The demo ScrapingBee key isn't working right now "
+				"(out of credits or expired) — get your own for free, "
+				"see the **Help** page."
 			)
-	st.markdown("**Pour commencer :**")
+	st.markdown("**To get started:**")
 	col_explorer, col_scraper, col_aide = st.columns(3)
 	with col_explorer:
-		st.page_link(PAGE_EXPLORER, label="Explorer les données")
+		st.page_link(PAGE_EXPLORER, label="Explore the data")
 	with col_scraper:
-		st.page_link(PAGE_SCRAPER, label="Lancer un scraping")
+		st.page_link(PAGE_SCRAPER, label="Start a scrape")
 	with col_aide:
-		st.page_link(PAGE_AIDE, label="Guide d'utilisation")
+		st.page_link(PAGE_AIDE, label="Usage guide")
 
 
 def page_explorer() -> None:
 	"""Dataset picker + natural-language search + charts."""
-	st.title("Explorer")
+	st.title("Explore")
 	databases = discover_databases()
 
 	if not databases:
-		st.info("Aucune donnée pour l'instant — va sur la page **Scraper** pour lancer un scraping.")
+		st.info("No data yet — go to the **Scraper** page to launch a scrape.")
 		return
 
 	dataset_labels = {dataset_label(p): p for p in databases}
 	selected_label = st.selectbox(
-		"Jeu de données à explorer",
+		"Dataset to explore",
 		list(dataset_labels.keys()),
-		help="Chaque recherche a sa propre base — choisis laquelle explorer.",
+		help="Each search has its own database — choose which one to explore.",
 	)
 	df = load_products_with_suppliers(dataset_labels[selected_label])
 
 	if df.empty:
-		st.info("Ce jeu de données est vide.")
+		st.info("This dataset is empty.")
 		return
 
 	st.download_button(
-		"⬇️ Télécharger ce jeu de données (CSV)",
+		"⬇️ Download this dataset (CSV)",
 		data=df.to_csv(index=False).encode("utf-8"),
 		file_name=f"{selected_label}.csv",
 		mime="text/csv",
-		help="Le jeu de données brut affiché ci-dessous — produits joints à leur fournisseur.",
+		help="The raw dataset shown below — products joined to their supplier.",
 	)
 
-	tab_search, tab_charts = st.tabs(["💬 Recherche en langage naturel", "📊 Graphiques"])
+	tab_search, tab_charts = st.tabs(["💬 Natural-language search", "📊 Charts"])
 
 	with tab_search:
 		st.info(
-			"🧑‍💼 **Mets-toi dans la peau d'un entrepreneur qui veut sourcer un produit "
-			"sur Alibaba.** Tu as des centaines de fournisseurs sous les yeux, tous avec "
-			"des prix, des notes et des garanties différentes — tu veux trouver les "
-			"meilleurs fournisseurs, au meilleur prix, sans passer des heures à comparer "
-			"des lignes à la main. C'est exactement ce que cette recherche permet de faire : "
-			"pose ta question en langage naturel, elle filtre/trie les données pour toi."
+			"🧑‍💼 **Put yourself in the shoes of an entrepreneur who wants to source a "
+			"product on Alibaba.** You have hundreds of suppliers in front of you, all with "
+			"different prices, ratings, and guarantees — you want to find the best "
+			"suppliers, at the best price, without spending hours comparing rows by hand. "
+			"That's exactly what this search does: ask your question in plain language, "
+			"it filters/sorts the data for you."
 		)
 
-		with st.expander("📋 Champs disponibles dans les données"):
+		with st.expander("📋 Available fields in the data"):
 			col_product, col_supplier = st.columns(2)
 			with col_product:
 				st.markdown(
 					"""
-					**Produit**
-					- `product_name` — nom complet du produit (parfois long)
-					- `short_name` — version raccourcie, plus lisible en tableau/graphique
-					- `min_price` / `max_price` — fourchette de prix (USD)
-					- `minimum_to_order` — quantité minimale de commande (MOQ)
-					- `product_score` — note du produit (sur 5)
-					- `review_count` / `review_score` — nombre d'avis et note moyenne
-					- `trade_product` — protégé par Trade Assurance (vrai/faux)
+					**Product**
+					- `product_name` — full product name (sometimes long)
+					- `short_name` — shortened version, more readable in a table/chart
+					- `min_price` / `max_price` — price range (USD)
+					- `minimum_to_order` — minimum order quantity (MOQ)
+					- `product_score` — product rating (out of 5)
+					- `review_count` / `review_score` — number of reviews and average rating
+					- `trade_product` — covered by Trade Assurance (true/false)
 					"""
 				)
 			with col_supplier:
 				st.markdown(
 					"""
-					**Fournisseur**
-					- `supplier_name` — nom du fournisseur
-					- `country_name` — pays du fournisseur
-					- `sopi_level` — niveau de performance (1 à 5)
-					- `years_as_gold_supplier` — ancienneté Gold Supplier
-					- `supplier_service_score` — note de service (sur 5)
+					**Supplier**
+					- `supplier_name` — supplier name
+					- `country_name` — supplier's country
+					- `sopi_level` — performance level (1 to 5)
+					- `years_as_gold_supplier` — years as a Gold Supplier
+					- `supplier_service_score` — service rating (out of 5)
 					"""
 				)
 			st.caption(
-				"Chaque ligne = un produit relié à son fournisseur — tu peux combiner "
-				"des critères des deux côtés dans une même question."
+				"Each row = one product linked to its supplier — you can combine "
+				"criteria from both sides in the same question."
 			)
 
 		st.markdown(
-			"**Exemples de questions à poser** — le graphique entre parenthèses est celui "
-			"que « Auto » choisit réellement pour cette formulation (vérifié, pas juste indicatif) :"
+			"**Example questions to ask** — the chart in parentheses is the one "
+			"\"Auto\" actually picks for this phrasing (verified, not just indicative):"
 		)
 		st.markdown(
 			"""
-			- *Quels sont les 5 fournisseurs avec le meilleur supplier_service_score ?* (Barres)
-			- *Quelle est la distribution des prix minimums ?* (Histogramme)
-			- *Quelle est la dispersion du product_score par pays fournisseur ?* (Boîte à moustaches)
-			- *Y a-t-il une corrélation entre le product_score et le min_price ?* (Nuage de points)
-			- *Compare le prix moyen des produits par pays fournisseur.* (Barres)
-			- *Quelle est la distribution du MOQ (quantité minimale de commande) ?* (Histogramme)
-			- *Quels pays sont représentés parmi les fournisseurs ?* (Carte du monde)
-			- *Liste les fournisseurs en Chine avec au moins 5 ans d'ancienneté Gold Supplier, triés par prix minimum.* (Tableau — choisis "Tableau seulement" dans le menu, "Auto" ne détecte pas ce cas et affichera des barres par défaut)
+			- *Which 5 suppliers have the best supplier_service_score?* (Bar)
+			- *What is the distribution of minimum prices?* (Histogram)
+			- *What is the spread of product_score by supplier country?* (Box plot)
+			- *Is there a correlation between product_score and min_price?* (Scatter)
+			- *Compare the average product price by supplier country.* (Bar)
+			- *What is the distribution of MOQ (minimum order quantity)?* (Histogram)
+			- *Which countries are represented among the suppliers?* (World map)
+			- *List suppliers in China with at least 5 years as a Gold Supplier, sorted by minimum price.* (Table — pick "Table only" from the menu, "Auto" doesn't detect this case and will show a bar chart by default)
 			"""
 		)
 
 		query = st.text_input(
-			"Pose ta question sur les produits/fournisseurs",
-			placeholder="ex: quels sont les 5 fournisseurs les mieux notés en Chine ?",
+			"Ask your question about products/suppliers",
+			placeholder="e.g. what are the 5 best-rated suppliers in China?",
 		)
 		chart_type_labels = {
-			"Auto (selon la question)": "auto",
-			"Tableau seulement": "none",
-			"Histogramme": "histogram",
-			"Barres": "bar",
-			"Boîte à moustaches": "box",
-			"Nuage de points": "scatter",
-			"Carte du monde": "map",
+			"Auto (based on the question)": "auto",
+			"Table only": "none",
+			"Histogram": "histogram",
+			"Bar": "bar",
+			"Box plot": "box",
+			"Scatter": "scatter",
+			"World map": "map",
 		}
-		chart_type_choice = st.selectbox("Type de graphique", list(chart_type_labels.keys()))
+		chart_type_choice = st.selectbox("Chart type", list(chart_type_labels.keys()))
 
 		if "nl_search_running" not in st.session_state:
 			st.session_state["nl_search_running"] = False
@@ -323,13 +323,13 @@ def page_explorer() -> None:
 		# raced each other and only a click spaced out from the others ever
 		# reached the chart-rendering code below).
 		if st.button(
-			"Chercher", disabled=(not query) or st.session_state["nl_search_running"]
+			"Search", disabled=(not query) or st.session_state["nl_search_running"]
 		):
 			st.session_state["nl_search_running"] = True
 			st.rerun()
 
 		if st.session_state["nl_search_running"]:
-			with st.spinner("Recherche en cours..."):
+			with st.spinner("Searching..."):
 				try:
 					# The LLM only ever returns a small filter/sort/select spec — we
 					# execute it ourselves with pandas. No LLM-generated code runs.
@@ -343,8 +343,8 @@ def page_explorer() -> None:
 					st.session_state["nl_search_running"] = False
 					logger.exception("Natural-language search failed")
 					st.error(
-						"La recherche a échoué. Réessaie avec une autre formulation, "
-						"ou réessaie plus tard si le problème persiste."
+						"The search failed. Try rephrasing your question, "
+						"or try again later if the problem persists."
 					)
 					st.stop()
 			st.session_state["nl_search_running"] = False
@@ -364,11 +364,11 @@ def page_explorer() -> None:
 			)
 			if spec_is_empty:
 				st.info(
-					"Je n'ai pas compris cette question — essaie de mentionner un "
-					"critère précis (prix, score, pays, fournisseur...)."
+					"I didn't understand that question — try mentioning a "
+					"specific criterion (price, score, country, supplier...)."
 				)
 			elif result.empty:
-				st.warning("Aucun résultat pour cette question.")
+				st.warning("No results for this question.")
 			else:
 				chart_type = chart_type_labels[chart_type_choice]
 				resolved_type = suggest_chart_type(query) if chart_type == "auto" else chart_type
@@ -384,24 +384,24 @@ def page_explorer() -> None:
 					# option["series"][0]["map"]) actually resolves to.
 					map_arg = Map("world", _load_world_geojson()) if resolved_type == "map" else None
 					st_echarts(options=option, theme="dark", height="500px", map=map_arg)
-					with st.expander("Voir les données du graphique"):
+					with st.expander("View chart data"):
 						st.dataframe(result, use_container_width=True)
 				else:
 					if resolved_type != "none":
 						st.caption(
-							f"Pas assez de colonnes adaptées pour un graphique « {resolved_type} » "
-							"avec ce résultat — affichage en tableau."
+							f"Not enough suitable columns for a \"{resolved_type}\" chart "
+							"with this result — showing a table instead."
 						)
 					st.dataframe(result, use_container_width=True)
 		st.caption(
-			"Cette recherche lit uniquement une copie en mémoire des données (lecture seule) — "
-			"jamais d'écriture en base depuis une requête en langage naturel."
+			"This search only reads an in-memory copy of the data (read-only) — "
+			"never writes to the database from a natural-language query."
 		)
 
 	with tab_charts:
 		col1, col2 = st.columns(2)
 		with col1:
-			option_price = build_histogram_option(df, "min_price", "Distribution des prix minimums")
+			option_price = build_histogram_option(df, "min_price", "Distribution of minimum prices")
 			st_echarts(options=option_price, theme="dark", height="500px")
 		with col2:
 			top_suppliers = (
@@ -415,13 +415,13 @@ def page_explorer() -> None:
 				top_suppliers,
 				"supplier_name",
 				"supplier_service_score",
-				"Top 10 fournisseurs par score de service",
+				"Top 10 suppliers by service score",
 				horizontal=True,
 			)
 			st_echarts(options=option_suppliers, theme="dark", height="500px")
 
 		option_country = build_box_option(
-			df, "country_name", "min_price", "Distribution des prix par pays fournisseur"
+			df, "country_name", "min_price", "Price distribution by supplier country"
 		)
 		st_echarts(options=option_country, theme="dark", height="500px")
 
@@ -433,32 +433,32 @@ def page_scraper() -> None:
 	if st.session_state.get("sb_quota_exhausted"):
 		if st.session_state.get("sb_quota_exhausted_own_key"):
 			st.warning(
-				"⚠️ Ta clé ScrapingBee ne fonctionne pas (quota de crédits épuisé, "
-				"ou clé invalide/expirée) — vérifie ton compte ScrapingBee ou réessaie plus tard."
+				"⚠️ Your ScrapingBee key isn't working (out of credits, "
+				"or invalid/expired) — check your ScrapingBee account or try again later."
 			)
 		else:
 			st.warning(
-				"⚠️ La clé ScrapingBee de démo ne fonctionne pas pour l'instant "
-				"(quota épuisé ou clé expirée) — récupère la tienne gratuitement "
-				"(voir la page **Aide**) ou saisis-la ci-dessous."
+				"⚠️ The demo ScrapingBee key isn't working right now "
+				"(out of credits or expired) — get your own for free "
+				"(see the **Help** page) or enter it below."
 			)
 
-	keywords = st.text_input("Mots-clés", placeholder="ex: wireless earbuds")
-	page_results = st.number_input("Nombre de pages", min_value=1, max_value=50, value=5)
+	keywords = st.text_input("Keywords", placeholder="e.g. wireless earbuds")
+	page_results = st.number_input("Number of pages", min_value=1, max_value=50, value=5)
 
 	user_scrapingbee_key = st.text_input(
-		"Ta clé ScrapingBee (facultatif)",
+		"Your ScrapingBee key (optional)",
 		type="password",
-		help="Laisse vide pour utiliser la clé de démo du site. Voir la page "
-		"Aide pour savoir où trouver la tienne, gratuitement.",
+		help="Leave empty to use the site's demo key. See the "
+		"Help page to find your own, for free.",
 		key="user_scrapingbee_key",
 	)
 
-	if st.button("Scraper en direct", type="primary", disabled=not keywords):
+	if st.button("Scrape live", type="primary", disabled=not keywords):
 		slug = slugify(keywords)
 		save_in_folder = f"scraped_pages/{slug}"
 
-		with st.spinner("Scraping en cours (peut prendre plusieurs minutes)..."):
+		with st.spinner("Scraping in progress (can take several minutes)..."):
 			try:
 				ScrapingBeeProxyProvider.sync_scraper(
 					save_in=save_in_folder,
@@ -472,93 +472,93 @@ def page_scraper() -> None:
 				st.session_state["sb_quota_exhausted_own_key"] = bool(user_scrapingbee_key)
 				if user_scrapingbee_key:
 					st.error(
-						"Ta clé ScrapingBee ne fonctionne pas (quota de crédits épuisé, ou "
-						"clé invalide/expirée). Vérifie ton compte ScrapingBee ou réessaie plus tard."
+						"Your ScrapingBee key isn't working (out of credits, or "
+						"invalid/expired). Check your ScrapingBee account or try again later."
 					)
 				else:
 					st.error(
-						"La clé ScrapingBee de démo ne fonctionne pas (quota épuisé ou "
-						"clé expirée). Récupère la tienne gratuitement (voir la page Aide) "
-						"ou saisis-la ci-dessus."
+						"The demo ScrapingBee key isn't working (out of credits or "
+						"expired). Get your own for free (see the Help page) "
+						"or enter it above."
 					)
 				st.stop()
 			except Exception:  # noqa: BLE001
 				logger.exception("Scraping failed")
-				st.error("Le scraping a échoué. Voir logs/app.log pour le détail.")
+				st.error("The scrape failed. See logs/app.log for details.")
 				st.stop()
 
-		with st.spinner("Analyse des pages..."):
+		with st.spinner("Analyzing pages..."):
 			try:
 				page_parser = PageParser(targeted_folder=save_in_folder)
 				raw_suppliers = page_parser.detected_suppliers()
 				raw_products = page_parser.detected_products()
 			except Exception:  # noqa: BLE001
 				logger.exception("Page parsing failed")
-				st.error("L'analyse des pages scrapées a échoué. Voir logs/app.log pour le détail.")
+				st.error("Analyzing the scraped pages failed. See logs/app.log for details.")
 				st.stop()
 
 		_validate_and_insert(raw_suppliers, raw_products, db_name=f"{DB_PREFIX}_{slug}")
 
 	st.divider()
 	st.caption(
-		"Le site cible change parfois de structure et peut casser le scraping en "
-		"direct — utilise le jeu de démo pour explorer l'app sans dépendre du site."
+		"The target site sometimes changes structure and can break live "
+		"scraping — use the demo dataset to explore the app without depending on the site."
 	)
-	if st.button("Charger le jeu de données de démo"):
+	if st.button("Load the demo dataset"):
 		raw_suppliers, raw_products = generate_demo_data()
 		_validate_and_insert(raw_suppliers, raw_products, db_name=f"{DB_PREFIX}_demo")
 
 
 def page_aide() -> None:
 	"""Onboarding guide: free ScrapingBee key, data architecture, how to use the app."""
-	st.title("❓ Aide")
+	st.title("❓ Help")
 
-	st.header("1. Obtenir une clé ScrapingBee gratuite")
+	st.header("1. Get a free ScrapingBee key")
 	st.markdown(
 		"""
-		1. Va sur [scrapingbee.com](https://www.scrapingbee.com) et crée un
-		   compte gratuit (email + mot de passe, ou via Google/GitHub).
-		2. Une fois connecté·e, ton tableau de bord affiche ta clé API en
-		   haut de la page, sous **API Key** — copie-la avec l'icône à côté.
-		3. Le plan gratuit inclut un nombre de crédits d'essai (vérifie le
-		   montant exact sur leur page de tarifs, ça peut changer) —
-		   largement de quoi tester cette app.
-		4. Reviens sur la page **Scraper** de ce site, colle ta clé dans le
-		   champ *"Ta clé ScrapingBee (facultatif)"*.
+		1. Go to [scrapingbee.com](https://www.scrapingbee.com) and create a
+		   free account (email + password, or via Google/GitHub).
+		2. Once logged in, your dashboard shows your API key at the
+		   top of the page, under **API Key** — copy it with the icon next to it.
+		3. The free plan includes a number of trial credits (check the
+		   exact amount on their pricing page, it can change) —
+		   plenty to test this app.
+		4. Come back to the **Scraper** page on this site and paste your key into the
+		   *"Your ScrapingBee key (optional)"* field.
 		"""
 	)
 
-	st.header("2. Comment les données sont organisées")
+	st.header("2. How the data is organized")
 	st.markdown(
 		"""
-		Chaque recherche que tu lances (un jeu de mots-clés) crée sa **propre
-		base de données** — un fichier séparé, nommé d'après ta recherche.
-		Les résultats de deux recherches différentes ne se mélangent jamais.
+		Every search you run (a set of keywords) creates its **own
+		database** — a separate file, named after your search.
+		Results from two different searches never mix.
 
-		Sur la page **Explorer**, le sélecteur *"Jeu de données à
-		explorer"* te permet de choisir laquelle de tes recherches passées
-		regarder — y compris le jeu de données de démo.
+		On the **Explore** page, the *"Dataset to
+		explore"* selector lets you pick which of your past searches
+		to look at — including the demo dataset.
 		"""
 	)
 
-	st.header("3. Mode d'emploi")
+	st.header("3. How to use it")
 	st.markdown(
 		"""
-		**Scraper en direct vs jeu de démo** — le scraping en direct dépend
-		de la structure du site cible, qui change parfois ; si ça casse,
-		utilise le bouton *"Charger le jeu de données de démo"* sur la page
-		**Scraper** pour explorer l'app sans dépendre du site.
+		**Live scraping vs. demo dataset** — live scraping depends
+		on the target site's structure, which changes sometimes; if it breaks,
+		use the *"Load the demo dataset"* button on the
+		**Scraper** page to explore the app without depending on the site.
 
-		**Poser une question en langage naturel** — sur la page **Explorer**,
-		décris ce que tu cherches en une phrase (ex. *"les 5 fournisseurs les
-		mieux notés en Chine"*). La question est transformée en filtre/tri
-		déterministe, jamais en code généré par une IA exécuté à l'aveugle.
+		**Asking a natural-language question** — on the **Explore** page,
+		describe what you're looking for in a sentence (e.g. *"the 5
+		best-rated suppliers in China"*). The question is turned into a
+		deterministic filter/sort, never into AI-generated code run blindly.
 
-		**Lire les graphiques** — un histogramme montre une distribution
-		(ex. répartition des prix), un graphique en barres compare des
-		catégories (ex. top fournisseurs), une boîte à moustaches montre la
-		dispersion des prix par groupe (ex. par pays), un nuage de points
-		montre une relation entre deux valeurs numériques.
+		**Reading the charts** — a histogram shows a distribution
+		(e.g. price spread), a bar chart compares
+		categories (e.g. top suppliers), a box plot shows the
+		spread of prices by group (e.g. by country), a scatter plot
+		shows a relationship between two numeric values.
 		"""
 	)
 
@@ -569,17 +569,17 @@ def page_aide() -> None:
 
 st.set_page_config(page_title="PickMySupplier", page_icon="🤏🛒", layout="wide")
 
-PAGE_ACCUEIL = st.Page(page_accueil, title="Accueil", icon="🏠", default=True)
-PAGE_EXPLORER = st.Page(page_explorer, title="Explorer", icon="🔍")
+PAGE_ACCUEIL = st.Page(page_accueil, title="Home", icon="🏠", default=True)
+PAGE_EXPLORER = st.Page(page_explorer, title="Explore", icon="🔍")
 PAGE_SCRAPER = st.Page(page_scraper, title="Scraper", icon="🕷️")
-PAGE_AIDE = st.Page(page_aide, title="Aide", icon="❓")
+PAGE_AIDE = st.Page(page_aide, title="Help", icon="❓")
 
 st.sidebar.markdown("## 🤏🛒 PickMySupplier")
 
 pg = st.navigation([PAGE_ACCUEIL, PAGE_EXPLORER, PAGE_SCRAPER, PAGE_AIDE])
 
 st.sidebar.link_button(
-	"☕ Soutenir sur Ko-fi", "https://ko-fi.com/poneoneo", use_container_width=True
+	"☕ Support on Ko-fi", "https://ko-fi.com/poneoneo", use_container_width=True
 )
 
 pg.run()
