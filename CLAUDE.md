@@ -255,6 +255,13 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
   `commands.py`/`db-init mysql`. `create_db_engine` reste générique
   (accepte toute URL SQLAlchemy) mais plus rien ne construit d'URL MySQL
   côté interface.
+- **Modèle Groq changé le 2026-08-17** : `llama-3.1-8b-instant` a été
+  décommissionné côté Groq (erreur 404 `model_not_found`) ; `nl_search.py`
+  et `product_naming.py` utilisent maintenant `openai/gpt-oss-20b`
+  (`GROQ_MODEL`, remplacement suggéré par Groq pour ce type de charge
+  légère/JSON mode). Revérifié avec un vrai appel Groq le 2026-08-24 —
+  `build_query_spec()`/`apply_query_spec()` fonctionnent toujours
+  correctement avec ce modèle.
 - **BrightData retiré le 2026-08-20** à la demande de l'utilisateur —
   `BrightDataProxyProvider`, `_with_country_targeting`, `goto_task`
   (`proxies_utils.py`, devenu mort avec le retrait) et `BRIGHT_DATA_API_KEY`
@@ -274,3 +281,13 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
 
 Export CSV et retrait de BrightData (annoncés dans le README le 2026-08-20)
 sont maintenant faits — voir Historique des décisions.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
