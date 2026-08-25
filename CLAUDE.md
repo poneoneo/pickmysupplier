@@ -267,20 +267,22 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
   (`proxies_utils.py`, devenu mort avec le retrait) et `BRIGHT_DATA_API_KEY`
   ont tous été supprimés. ScrapingBee (clé BYO gratuite) est maintenant le
   seul fournisseur de proxy — plus de sélecteur dans la page Scraper.
+- **Hébergement public déployé le 2026-08-20** sur Streamlit Community
+  Cloud : https://pickmysupplier.streamlit.app/ (repli `st.secrets` déjà en
+  place, voir Variables d'environnement). L'app se met en veille après une
+  période d'inactivité (comportement standard du tier gratuit) — un visiteur
+  doit cliquer « Yes, get this app back up! » pour la réveiller, redémarrage
+  vérifié en conditions réelles le 2026-08-25.
 
 ## Prochaines étapes possibles (non commencées)
 
 - Commitizen (version bump + changelog automatique) et packaging pipx —
   tous deux explicitement reportés par l'utilisateur, voir
   `project_deferred_packaging_versioning` en mémoire
-- **Hébergement public de l'app** : le code est prêt (repli `st.secrets`
-  pour les clés, voir Variables d'environnement) mais l'app tourne encore
-  uniquement en local — déployer (ex. Streamlit Community Cloud) est une
-  action côté compte de l'utilisateur, pas quelque chose que Claude peut
-  faire seul.
 
-Export CSV et retrait de BrightData (annoncés dans le README le 2026-08-20)
-sont maintenant faits — voir Historique des décisions.
+Export CSV, retrait de BrightData et hébergement public (annoncés dans le
+README le 2026-08-20) sont maintenant faits — voir Historique des
+décisions.
 
 ## graphify
 
