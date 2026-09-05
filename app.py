@@ -30,7 +30,13 @@ from sourcing_intel_cli.data_quality import (
 	run_quality_checks,
 	write_quality_report,
 )
-from sourcing_intel_cli.datasets import DB_PREFIX, dataset_label, discover_databases, slugify
+from sourcing_intel_cli.datasets import (
+	DB_PREFIX,
+	cleanup_stale_sessions,
+	dataset_label,
+	discover_databases,
+	slugify,
+)
 from sourcing_intel_cli.demo_data import generate_demo_data
 from sourcing_intel_cli.engine_and_database import (
 	add_products_to_db,
@@ -595,6 +601,24 @@ def page_aide() -> None:
 # ---------------------------------------------------------------------------
 
 st.set_page_config(page_title="PickMySupplier", page_icon="🤏🛒", layout="wide")
+
+
+@st.cache_resource(ttl=3600)
+def _cleanup_stale_sessions_once() -> None:
+	"""Run `cleanup_stale_sessions` at most once per hour across all visitors.
+
+	`st.cache_resource` caches at the process level (shared by every
+	visitor, unlike `st.session_state`) — with a 1-hour TTL this runs the
+	disk housekeeping once per hour for the whole site, no matter how many
+	concurrent sessions there are, without a separate scheduler.
+
+	:return: None
+	:rtype: None
+	"""
+	cleanup_stale_sessions()
+
+
+_cleanup_stale_sessions_once()
 
 PAGE_ACCUEIL = st.Page(page_accueil, title="Home", icon="🏠", default=True)
 PAGE_EXPLORER = st.Page(page_explorer, title="Explore", icon="🔍")
