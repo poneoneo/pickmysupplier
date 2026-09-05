@@ -229,7 +229,11 @@ def page_accueil() -> None:
 def page_explorer() -> None:
 	"""Dataset picker + natural-language search + charts."""
 	st.title("Explore")
-	databases = discover_databases()
+	session_id = _get_session_id()
+	databases = discover_databases(root=Path(f"sessions/{session_id}/db"))
+	demo_db = Path(f"{DB_PREFIX}_demo.sqlite")
+	if demo_db.exists():
+		databases.append(demo_db)
 
 	if not databases:
 		st.info("No data yet — go to the **Scraper** page to launch a scrape.")
