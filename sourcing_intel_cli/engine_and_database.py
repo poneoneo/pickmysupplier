@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Sequence
 
 from loguru import logger
@@ -35,6 +36,8 @@ def create_db_engine(db_name: str = "", db_url: str = ""):
 	:return: A new database engine object.
 	:rtype: sqlalchemy.engine.Engine
 	"""
+	if not db_url:
+		Path(f"{db_name}.sqlite").parent.mkdir(parents=True, exist_ok=True)
 	db_url = db_url if db_url else f"sqlite:///{db_name}.sqlite"
 	return create_engine(db_url)
 
