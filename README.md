@@ -137,12 +137,19 @@ Full models: [`sourcing_intel_cli/models.py`](sourcing_intel_cli/models.py).
 
 ## Data pipeline
 
+Everything a live scrape produces is namespaced under
+`sessions/<session_id>/` (one id per browser session) — the app is
+publicly hosted with several visitors at once, so without this isolation
+one visitor could see another's scraped data. See the design doc at
+[`docs/superpowers/specs/2026-09-05-session-scoped-data-isolation-design.md`](docs/superpowers/specs/2026-09-05-session-scoped-data-isolation-design.md)
+for the full rationale.
+
 ```
 1. proxies_providers.py   → scrapes raw HTML pages (ScrapingBee)
-2. html_to_disk.py        → saves them to disk (scraped_pages/<keywords>/)
+2. html_to_disk.py        → saves them to disk (sessions/<session_id>/scraped_pages/<slug>/)
 3. scrape_from_disk.py    → re-reads the HTML, extracts the embedded JSON → SupplierDict/ProductDict
 4. data_quality.py        → validates each row (rejects the faulty row, keeps the rest)
-5. engine_and_database.py → inserts the clean rows (rollback + skip on duplicate)
+5. engine_and_database.py → inserts the clean rows (sessions/<session_id>/db/sourcing_intel_<slug>.sqlite, rollback + skip on duplicate)
 6. app.py                 → read-only access for charts and NL search
 ```
 

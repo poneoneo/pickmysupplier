@@ -152,19 +152,31 @@ fait un `ALTER TABLE` idempotent au démarrage si la colonne manque.
 
 ## Flux de données (bout en bout)
 
+Tout ce que produit un scrape en direct est namespacé sous
+`sessions/<session_id>/` (`session_id` généré par `app.py::_get_session_id()`,
+stocké dans `st.session_state`) — l'hébergement public reçoit plusieurs
+visiteurs en même temps, donc sans cet espacement un visiteur pouvait voir
+les données scrapées par un autre ; voir
+`docs/superpowers/specs/2026-09-05-session-scoped-data-isolation-design.md`
+pour le détail.
+
 1. `proxies_providers.py` scrape des pages HTML brutes → sauvegardées sur
-   disque via `html_to_disk.write_to_disk`, dans `scraped_pages/<mots-clés>/`
-   (dossier dérivé de `app.py` : `f"scraped_pages/{keywords.strip().replace(' ', '_')}"`).
-   Tout `scraped_pages/` est gitignored en bloc, donc peu importe les
-   mots-clés recherchés, aucun HTML scrapé ne finit committé par erreur
+   disque via `html_to_disk.write_to_disk`, dans
+   `sessions/<session_id>/scraped_pages/<slug>/` (dossier dérivé de
+   `app.py` : `f"sessions/{session_id}/scraped_pages/{slug}"`, `slug` venant
+   de `datasets.slugify(keywords)`). Tout `sessions/` est gitignored en
+   bloc, donc peu importe les mots-clés recherchés ou le visiteur, aucun
+   HTML scrapé ne finit committé par erreur
 2. `scrape_from_disk.PageParser` relit ces fichiers HTML, extrait le JSON
    embarqué (`html_to_disk.json_hunter`), et produit des listes de
    `SupplierDict` / `ProductDict`
 3. `data_quality.run_quality_checks` valide chaque ligne — **rejette la
    ligne fautive, garde le reste** (politique confirmée avec l'utilisateur,
    ne pas la changer en "tout bloquer" sans lui redemander)
-4. `engine_and_database.add_suppliers_to_db` / `add_products_to_db` insèrent
-   les lignes propres, avec rollback + skip sur `IntegrityError` (doublon)
+4. `engine_and_database.add_suppliers_to_db` / `add_products_to_db`
+   insèrent les lignes propres dans
+   `sessions/<session_id>/db/sourcing_intel_<slug>.sqlite`, avec rollback +
+   skip sur `IntegrityError` (doublon)
 5. `app.py` lit la base en lecture seule (`pandas.read_sql_query`, jamais
    d'écriture depuis cette voie) pour les graphiques fixes et la recherche
    en langage naturel (`nl_search.build_query_spec`/`apply_query_spec`,
