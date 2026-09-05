@@ -10,6 +10,7 @@ Run with: streamlit run app.py
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 
 import pandas as pd
@@ -42,6 +43,25 @@ from sourcing_intel_cli.proxies_providers import ScrapingBeeProxyProvider, Scrap
 from sourcing_intel_cli.product_naming import summarize_product_names
 from sourcing_intel_cli.scrape_from_disk import PageParser
 from sourcing_intel_cli.typed_datas import ProductDict, SupplierDict
+
+
+# ---------------------------------------------------------------------------
+# Session identity
+# ---------------------------------------------------------------------------
+
+
+def _get_session_id() -> str:
+	"""Stable per-visit identifier used to namespace a visitor's scraped data.
+
+	Generated once per Streamlit session and cached in `st.session_state` —
+	scraped HTML and per-search databases are stored under
+	`sessions/<session_id>/` so one visitor never sees another's data (see
+	docs/superpowers/specs/2026-09-05-session-scoped-data-isolation-design.md).
+
+	:return: A short hex id, stable for the lifetime of this browser session.
+	:rtype: str
+	"""
+	return st.session_state.setdefault("session_id", uuid.uuid4().hex[:12])
 
 
 # ---------------------------------------------------------------------------
@@ -455,8 +475,9 @@ def page_scraper() -> None:
 	)
 
 	if st.button("Scrape live", type="primary", disabled=not keywords):
+		session_id = _get_session_id()
 		slug = slugify(keywords)
-		save_in_folder = f"scraped_pages/{slug}"
+		save_in_folder = f"sessions/{session_id}/scraped_pages/{slug}"
 
 		with st.spinner("Scraping in progress (can take several minutes)..."):
 			try:
@@ -497,7 +518,9 @@ def page_scraper() -> None:
 				st.error("Analyzing the scraped pages failed. See logs/app.log for details.")
 				st.stop()
 
-		_validate_and_insert(raw_suppliers, raw_products, db_name=f"{DB_PREFIX}_{slug}")
+		_validate_and_insert(
+			raw_suppliers, raw_products, db_name=f"sessions/{session_id}/db/{DB_PREFIX}_{slug}"
+		)
 
 	st.divider()
 	st.caption(
