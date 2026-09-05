@@ -10,6 +10,8 @@ shared name used for both the scraped-pages folder and the database file;
 
 from __future__ import annotations
 
+import shutil
+import time
 from pathlib import Path
 
 DB_PREFIX = "sourcing_intel"
@@ -56,3 +58,33 @@ def dataset_label(db_path: Path) -> str:
 	if stem == DB_PREFIX:
 		return f"{DB_PREFIX} (ancien, recherches mélangées)"
 	return stem.removeprefix(f"{DB_PREFIX}_").replace("_", " ")
+
+
+def cleanup_stale_sessions(root: Path = Path("sessions"), max_age_hours: int = 48) -> None:
+	"""Delete session directories whose newest file is older than max_age_hours.
+
+	Best-effort disk housekeeping for the per-session storage a live scrape
+	creates (see `app.py::page_scraper`) — without this, `sessions/` would
+	grow forever on the shared hosting disk, since nothing else ever removes
+	a visitor's directory after they leave.
+
+	:param root: Directory containing one subdirectory per session.
+	:type root: Path
+	:param max_age_hours: A session directory is deleted once its most
+		recently modified file is older than this, in hours.
+	:type max_age_hours: int
+	:return: None
+	:rtype: None
+	"""
+	if not root.exists():
+		return
+	cutoff = time.time() - max_age_hours * 3600
+	for session_dir in root.iterdir():
+		if not session_dir.is_dir():
+			continue
+		newest_mtime = max(
+			(p.stat().st_mtime for p in session_dir.rglob("*") if p.is_file()),
+			default=session_dir.stat().st_mtime,
+		)
+		if newest_mtime < cutoff:
+			shutil.rmtree(session_dir)
