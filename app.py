@@ -134,7 +134,10 @@ def _load_world_geojson() -> dict:
 
 
 def _validate_and_insert(
-	raw_suppliers: list[SupplierDict], raw_products: list[ProductDict], db_name: str
+	raw_suppliers: list[SupplierDict],
+	raw_products: list[ProductDict],
+	db_name: str,
+	report_path: str | None = None,
 ) -> None:
 	"""Run the quality agent then write clean rows to the DB, with Streamlit feedback.
 
@@ -148,10 +151,22 @@ def _validate_and_insert(
 	:param db_name: Database name (without `.sqlite`) to write to — one per
 		search, so different searches' results never mix.
 	:type db_name: str
+	:param report_path: Where to write the quality report JSON. `None` (the
+		default, used by the demo dataset loader — non-sensitive, shared data)
+		keeps `write_quality_report`'s own default, a single shared
+		`data_quality_report.json` at the project root. The live-scrape call
+		site passes a `sessions/<session_id>/...` path instead, since that
+		file is otherwise the last scrape-derived artifact written outside a
+		visitor's own session directory.
+	:type report_path: str | None
 	"""
 	with st.spinner("Running data quality checks..."):
 		suppliers, products, issues = run_quality_checks(raw_suppliers, raw_products)
-		write_quality_report(issues)
+		if report_path:
+			Path(report_path).parent.mkdir(parents=True, exist_ok=True)
+			write_quality_report(issues, path=report_path)
+		else:
+			write_quality_report(issues)
 
 	if issues:
 		st.warning(f"{len(issues)} row(s) rejected by the quality agent — see details below.")
@@ -238,14 +253,20 @@ def page_explorer() -> None:
 	session_id = _get_session_id()
 	databases = discover_databases(root=Path(f"sessions/{session_id}/db"))
 	demo_db = Path(f"{DB_PREFIX}_demo.sqlite")
-	if demo_db.exists():
-		databases.append(demo_db)
+	demo_db_exists = demo_db.exists()
 
-	if not databases:
+	if not databases and not demo_db_exists:
 		st.info("No data yet — go to the **Scraper** page to launch a scrape.")
 		return
 
+	# The shared demo dataset gets its own distinct label, built directly
+	# rather than via `dataset_label(demo_db)` — that would just return
+	# "demo", which collides with (and, since it's added last, silently
+	# overwrites in this dict) a visitor's own session-scoped search for the
+	# literal keyword "demo".
 	dataset_labels = {dataset_label(p): p for p in databases}
+	if demo_db_exists:
+		dataset_labels["demo (shared)"] = demo_db
 	selected_label = st.selectbox(
 		"Dataset to explore",
 		list(dataset_labels.keys()),
@@ -529,7 +550,10 @@ def page_scraper() -> None:
 				st.stop()
 
 		_validate_and_insert(
-			raw_suppliers, raw_products, db_name=f"sessions/{session_id}/db/{DB_PREFIX}_{slug}"
+			raw_suppliers,
+			raw_products,
+			db_name=f"sessions/{session_id}/db/{DB_PREFIX}_{slug}",
+			report_path=f"sessions/{session_id}/data_quality_report.json",
 		)
 
 	st.divider()
@@ -571,6 +595,13 @@ def page_aide() -> None:
 		On the **Explore** page, the *"Dataset to
 		explore"* selector lets you pick which of your past searches
 		to look at — including the demo dataset.
+
+		**Your data only lasts for this browser session.** Refreshing the
+		page or coming back later starts a new session, and your previous
+		searches won't show up in the selector anymore — re-run the scrape
+		if you need that data again. Session data is also automatically
+		deleted from the server after 48 hours, whether you're still around
+		or not.
 		"""
 	)
 
@@ -612,10 +643,20 @@ def _cleanup_stale_sessions_once() -> None:
 	disk housekeeping once per hour for the whole site, no matter how many
 	concurrent sessions there are, without a separate scheduler.
 
+	Note `st.cache_resource` does NOT cache an exception raised by the
+	wrapped function — it would just re-raise on every rerun, for every
+	visitor, turning this best-effort housekeeping into a permanent outage.
+	`cleanup_stale_sessions` already tolerates the individual filesystem
+	errors it can hit, but this `try/except` is defense in depth on top of
+	that: best-effort housekeeping must never be able to take the app down.
+
 	:return: None
 	:rtype: None
 	"""
-	cleanup_stale_sessions()
+	try:
+		cleanup_stale_sessions()
+	except Exception as e:  # noqa: BLE001
+		logger.warning(f"Stale-session cleanup failed, continuing without it: {e}")
 
 
 _cleanup_stale_sessions_once()

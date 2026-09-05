@@ -96,6 +96,59 @@ class TestCleanupStaleSessions:
 	def test_missing_root_does_not_raise(self, tmp_path):
 		cleanup_stale_sessions(root=tmp_path / "does_not_exist", max_age_hours=48)
 
+	def test_tolerates_stat_error_on_one_file(self, tmp_path, monkeypatch):
+		# Simulates a file vanishing between rglob() listing it and stat()
+		# being called on it a moment later (e.g. a concurrent scrape's own
+		# SQLite -wal/-shm churn) — cleanup must skip that one file rather
+		# than raising and crashing the whole cleanup pass for every visitor.
+		from pathlib import Path
+
+		session_dir = tmp_path / "flaky_session"
+		good_file = session_dir / "db" / f"{DB_PREFIX}_thinkpad.sqlite"
+		bad_file = session_dir / "scraped_pages" / "vanished.html"
+		good_file.parent.mkdir(parents=True)
+		bad_file.parent.mkdir(parents=True)
+		good_file.touch()
+		bad_file.touch()
+
+		old_time = time.time() - 49 * 3600
+		os.utime(good_file, (old_time, old_time))
+		os.utime(bad_file, (old_time, old_time))
+
+		original_stat = Path.stat
+
+		def flaky_stat(self, *args, **kwargs):
+			if self == bad_file:
+				raise OSError("file vanished mid-iteration")
+			return original_stat(self, *args, **kwargs)
+
+		monkeypatch.setattr(Path, "stat", flaky_stat)
+
+		cleanup_stale_sessions(root=tmp_path, max_age_hours=48)  # must not raise
+
+		assert not session_dir.exists()
+
+	def test_rmtree_is_called_with_ignore_errors(self, tmp_path, monkeypatch):
+		# shutil.rmtree can raise OSError on a shared disk (permission error,
+		# a partially-removed tree) — cleanup must tolerate that instead of
+		# propagating, so it's called with ignore_errors=True.
+		stale_session = tmp_path / "stale"
+		stale_file = stale_session / "db" / f"{DB_PREFIX}_thinkpad.sqlite"
+		stale_file.parent.mkdir(parents=True)
+		stale_file.touch()
+		old_time = time.time() - 49 * 3600
+		os.utime(stale_file, (old_time, old_time))
+
+		calls = []
+		monkeypatch.setattr(
+			"sourcing_intel_cli.datasets.shutil.rmtree",
+			lambda path, **kwargs: calls.append(kwargs),
+		)
+
+		cleanup_stale_sessions(root=tmp_path, max_age_hours=48)
+
+		assert calls == [{"ignore_errors": True}]
+
 
 class TestDiscoverDatabasesIsolation:
 	def test_does_not_see_files_in_a_different_root(self, tmp_path):

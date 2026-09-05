@@ -66,7 +66,15 @@ def cleanup_stale_sessions(root: Path = Path("sessions"), max_age_hours: int = 4
 	Best-effort disk housekeeping for the per-session storage a live scrape
 	creates (see `app.py::page_scraper`) — without this, `sessions/` would
 	grow forever on the shared hosting disk, since nothing else ever removes
-	a visitor's directory after they leave.
+	a visitor's directory after they leave. Runs on a shared, actively-written
+	disk (other visitors may be scraping concurrently), so every filesystem
+	call here tolerates `OSError`: a file can vanish between being listed by
+	`rglob` and being `stat`'d a moment later (a finished scrape's own
+	SQLite `-wal`/`-shm` churn, e.g.), and `shutil.rmtree` can hit a
+	permission error or a partially-removed tree. None of that should ever
+	propagate — this function is called from `app.py` at module scope on
+	every rerun, for every visitor, so an unhandled exception here would
+	take down the whole site, not just skip one cleanup pass.
 
 	:param root: Directory containing one subdirectory per session.
 	:type root: Path
@@ -82,9 +90,22 @@ def cleanup_stale_sessions(root: Path = Path("sessions"), max_age_hours: int = 4
 	for session_dir in root.iterdir():
 		if not session_dir.is_dir():
 			continue
-		newest_mtime = max(
-			(p.stat().st_mtime for p in session_dir.rglob("*") if p.is_file()),
-			default=session_dir.stat().st_mtime,
-		)
+		mtimes = []
+		for p in session_dir.rglob("*"):
+			if not p.is_file():
+				continue
+			try:
+				mtimes.append(p.stat().st_mtime)
+			except OSError:
+				# Vanished between rglob() listing it and stat() here — skip
+				# this one file rather than crashing the whole cleanup pass.
+				continue
+		try:
+			newest_mtime = max(mtimes) if mtimes else session_dir.stat().st_mtime
+		except OSError:
+			# Even the directory itself is no longer stat-able (e.g. removed
+			# by a concurrent cleanup pass) — treat it as "just modified" so
+			# it's simply skipped this round instead of raising.
+			newest_mtime = time.time()
 		if newest_mtime < cutoff:
-			shutil.rmtree(session_dir)
+			shutil.rmtree(session_dir, ignore_errors=True)
