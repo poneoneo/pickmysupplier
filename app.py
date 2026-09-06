@@ -226,17 +226,15 @@ def page_accueil() -> None:
 		"""
 	)
 	if st.session_state.get("sb_quota_exhausted"):
-		if st.session_state.get("sb_quota_exhausted_own_key"):
-			st.warning(
-				"⚠️ Your ScrapingBee key isn't working (out of credits, "
-				"or invalid/expired) — check your ScrapingBee account or try again later."
-			)
-		else:
-			st.warning(
-				"⚠️ The demo ScrapingBee key isn't working right now "
-				"(out of credits or expired) — get your own for free, "
-				"see the **Help** page."
-			)
+		st.warning(
+			"⚠️ Your ScrapingBee key isn't working (out of credits, "
+			"or invalid/expired) — check your ScrapingBee account or try again later."
+		)
+	st.caption(
+		"There's no shared scraping key on this site — grab your own free "
+		"ScrapingBee key (2 minutes) on the **Scraper** page before your "
+		"first search."
+	)
 	st.markdown("**To get started:**")
 	col_explorer, col_scraper, col_aide = st.columns(3)
 	with col_explorer:
@@ -478,34 +476,39 @@ def page_explorer() -> None:
 
 
 def page_scraper() -> None:
-	"""Live scraping controls, demo dataset loader, and the ScrapingBee BYO-key field."""
+	"""Live scraping controls, demo dataset loader, and the required ScrapingBee key field."""
 	st.title("Scraper")
 
 	if st.session_state.get("sb_quota_exhausted"):
-		if st.session_state.get("sb_quota_exhausted_own_key"):
-			st.warning(
-				"⚠️ Your ScrapingBee key isn't working (out of credits, "
-				"or invalid/expired) — check your ScrapingBee account or try again later."
-			)
-		else:
-			st.warning(
-				"⚠️ The demo ScrapingBee key isn't working right now "
-				"(out of credits or expired) — get your own for free "
-				"(see the **Help** page) or enter it below."
-			)
+		st.warning(
+			"⚠️ Your ScrapingBee key isn't working (out of credits, "
+			"or invalid/expired) — check your ScrapingBee account or try again later."
+		)
 
-	keywords = st.text_input("Keywords", placeholder="e.g. wireless earbuds")
-	page_results = st.number_input("Number of pages", min_value=1, max_value=50, value=5)
-
+	st.subheader("1. Get your free ScrapingBee key")
+	st.caption(
+		"There's no shared key on this site — each visitor scrapes with "
+		"their own free ScrapingBee account, so your searches never "
+		"compete with anyone else's quota."
+	)
+	st.link_button("Get a free key at scrapingbee.com →", "https://www.scrapingbee.com")
 	user_scrapingbee_key = st.text_input(
-		"Your ScrapingBee key (optional)",
+		"Your ScrapingBee key",
 		type="password",
-		help="Leave empty to use the site's demo key. See the "
-		"Help page to find your own, for free.",
+		help="See the Help page for step-by-step instructions to find it, for free.",
 		key="user_scrapingbee_key",
 	)
 
-	if st.button("Scrape live", type="primary", disabled=not keywords):
+	st.subheader("2. Scrape")
+	keywords = st.text_input("Keywords", placeholder="e.g. wireless earbuds")
+	page_results = st.number_input("Number of pages", min_value=1, max_value=50, value=5)
+
+	if not user_scrapingbee_key:
+		st.caption("⚠️ Enter your ScrapingBee key above to enable scraping.")
+
+	if st.button(
+		"Scrape live", type="primary", disabled=not keywords or not user_scrapingbee_key
+	):
 		session_id = _get_session_id()
 		slug = slugify(keywords)
 		save_in_folder = f"sessions/{session_id}/scraped_pages/{slug}"
@@ -521,18 +524,10 @@ def page_scraper() -> None:
 			except ScrapingBeeKeyError as e:
 				logger.warning(f"ScrapingBee key problem: {e}")
 				st.session_state["sb_quota_exhausted"] = True
-				st.session_state["sb_quota_exhausted_own_key"] = bool(user_scrapingbee_key)
-				if user_scrapingbee_key:
-					st.error(
-						"Your ScrapingBee key isn't working (out of credits, or "
-						"invalid/expired). Check your ScrapingBee account or try again later."
-					)
-				else:
-					st.error(
-						"The demo ScrapingBee key isn't working (out of credits or "
-						"expired). Get your own for free (see the Help page) "
-						"or enter it above."
-					)
+				st.error(
+					"Your ScrapingBee key isn't working (out of credits, or "
+					"invalid/expired). Check your ScrapingBee account or try again later."
+				)
 				st.stop()
 			except Exception:  # noqa: BLE001
 				logger.exception("Scraping failed")
@@ -570,9 +565,13 @@ def page_aide() -> None:
 	"""Onboarding guide: free ScrapingBee key, data architecture, how to use the app."""
 	st.title("❓ Help")
 
-	st.header("1. Get a free ScrapingBee key")
+	st.header("1. Get your free ScrapingBee key")
 	st.markdown(
 		"""
+		There's no shared scraping key on this site — every visitor needs
+		their own, free ScrapingBee account. It's the first step, before
+		you can run any live search:
+
 		1. Go to [scrapingbee.com](https://www.scrapingbee.com) and create a
 		   free account (email + password, or via Google/GitHub).
 		2. Once logged in, your dashboard shows your API key at the
@@ -581,7 +580,8 @@ def page_aide() -> None:
 		   exact amount on their pricing page, it can change) —
 		   plenty to test this app.
 		4. Come back to the **Scraper** page on this site and paste your key into the
-		   *"Your ScrapingBee key (optional)"* field.
+		   *"Your ScrapingBee key"* field — the *"Scrape live"* button
+		   stays disabled until you do.
 		"""
 	)
 

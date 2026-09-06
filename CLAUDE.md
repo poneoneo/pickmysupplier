@@ -37,9 +37,11 @@ pour réduire l'ambition/complexité — voir section Historique des décisions)
 
 L'app est multi-pages via `st.navigation` : **Accueil** (pitch + bannière de
 quota), **Explorer** (sélecteur de jeu de données + recherche en langage
-naturel + graphiques), **Scraper** (scraping en direct + clé ScrapingBee
-BYO + jeu de démo), **Aide** (guide d'onboarding : où trouver une clé
-ScrapingBee gratuite, comment les données sont organisées, mode d'emploi).
+naturel + graphiques), **Scraper** (scraping en direct + jeu de démo —
+la clé ScrapingBee personnelle du visiteur est **obligatoire** pour
+scraper, pas de clé partagée sur le site : voir Historique des décisions,
+2026-09-06), **Aide** (guide d'onboarding : où trouver une clé ScrapingBee
+gratuite, comment les données sont organisées, mode d'emploi).
 Thème sombre (`.streamlit/config.toml`).
 
 ## Stack technique
@@ -48,8 +50,10 @@ Thème sombre (`.streamlit/config.toml`).
   navigateur piloté), via ScrapingBee (API REST, rendu JS côté serveur).
   Syphoon a été retiré (service disparu) puis BrightData (CDP, Scraping
   Browser) a aussi été retiré le 2026-08-20 à la demande de l'utilisateur —
-  ScrapingBee (clé BYO gratuite) est maintenant le seul fournisseur de proxy,
-  voir Historique des décisions.
+  ScrapingBee est maintenant le seul fournisseur de proxy. Chaque visiteur
+  doit fournir sa propre clé gratuite pour scraper (bouton "Scrape live"
+  désactivé sans clé) — pas de clé partagée/démo sur le site public, voir
+  Historique des décisions (2026-09-06).
 - **Parsing HTML** : `selectolax`
 - **Modèles/DB** : SQLModel + SQLAlchemy, backend SQLite uniquement
   (`create_db_engine` accepte n'importe quelle URL SQLAlchemy, mais aucune
@@ -285,6 +289,20 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
   période d'inactivité (comportement standard du tier gratuit) — un visiteur
   doit cliquer « Yes, get this app back up! » pour la réveiller, redémarrage
   vérifié en conditions réelles le 2026-08-25.
+- **Clé ScrapingBee rendue obligatoire le 2026-09-06** — l'utilisateur ne
+  veut plus qu'une clé "démo"/partagée existe comme chemin normal côté UI
+  (elle avait fini par exister de fait sur le site public quand sa propre
+  clé personnelle a été utilisée pour des tests). Page Scraper : le champ
+  clé passe en étape 1 (avant les mots-clés), le bouton "Scrape live" est
+  désactivé tant qu'aucune clé n'est saisie (`disabled=not keywords or not
+  user_scrapingbee_key` dans `app.py::page_scraper`), et les messages
+  d'avertissement "clé démo" ont été retirés (un seul message "ta clé ne
+  fonctionne pas" reste, `sb_quota_exhausted_own_key` a disparu du
+  session_state). Le fallback technique `SCRAPINGBEE_API_KEY`/`.env` dans
+  `_resolve_scrapingbee_key` (`proxies_providers.py`) n'a pas été retiré du
+  code (filet de sécurité pour les tests locaux de l'auteur), mais ne doit
+  **jamais** être configuré dans `st.secrets` sur l'hébergement public —
+  sinon on recrée exactement le problème qu'on vient de corriger.
 
 ## Prochaines étapes possibles (non commencées)
 
