@@ -37,9 +37,11 @@ pour réduire l'ambition/complexité — voir section Historique des décisions)
 
 L'app est multi-pages via `st.navigation` : **Accueil** (pitch + bannière de
 quota), **Explorer** (sélecteur de jeu de données + recherche en langage
-naturel + graphiques), **Scraper** (scraping en direct + clé ScrapingBee
-BYO + jeu de démo), **Aide** (guide d'onboarding : où trouver une clé
-ScrapingBee gratuite, comment les données sont organisées, mode d'emploi).
+naturel + graphiques), **Scraper** (scraping en direct + jeu de démo —
+la clé ScrapingBee personnelle du visiteur est **obligatoire** pour
+scraper, pas de clé partagée sur le site : voir Historique des décisions,
+2026-09-06), **Aide** (guide d'onboarding : où trouver une clé ScrapingBee
+gratuite, comment les données sont organisées, mode d'emploi).
 Thème sombre (`.streamlit/config.toml`).
 
 ## Stack technique
@@ -48,8 +50,10 @@ Thème sombre (`.streamlit/config.toml`).
   navigateur piloté), via ScrapingBee (API REST, rendu JS côté serveur).
   Syphoon a été retiré (service disparu) puis BrightData (CDP, Scraping
   Browser) a aussi été retiré le 2026-08-20 à la demande de l'utilisateur —
-  ScrapingBee (clé BYO gratuite) est maintenant le seul fournisseur de proxy,
-  voir Historique des décisions.
+  ScrapingBee est maintenant le seul fournisseur de proxy. Chaque visiteur
+  doit fournir sa propre clé gratuite pour scraper (bouton "Scrape live"
+  désactivé sans clé) — pas de clé partagée/démo sur le site public, voir
+  Historique des décisions (2026-09-06).
 - **Parsing HTML** : `selectolax`
 - **Modèles/DB** : SQLModel + SQLAlchemy, backend SQLite uniquement
   (`create_db_engine` accepte n'importe quelle URL SQLAlchemy, mais aucune
@@ -152,19 +156,31 @@ fait un `ALTER TABLE` idempotent au démarrage si la colonne manque.
 
 ## Flux de données (bout en bout)
 
+Tout ce que produit un scrape en direct est namespacé sous
+`sessions/<session_id>/` (`session_id` généré par `app.py::_get_session_id()`,
+stocké dans `st.session_state`) — l'hébergement public reçoit plusieurs
+visiteurs en même temps, donc sans cet espacement un visiteur pouvait voir
+les données scrapées par un autre ; voir
+`docs/superpowers/specs/2026-09-05-session-scoped-data-isolation-design.md`
+pour le détail.
+
 1. `proxies_providers.py` scrape des pages HTML brutes → sauvegardées sur
-   disque via `html_to_disk.write_to_disk`, dans `scraped_pages/<mots-clés>/`
-   (dossier dérivé de `app.py` : `f"scraped_pages/{keywords.strip().replace(' ', '_')}"`).
-   Tout `scraped_pages/` est gitignored en bloc, donc peu importe les
-   mots-clés recherchés, aucun HTML scrapé ne finit committé par erreur
+   disque via `html_to_disk.write_to_disk`, dans
+   `sessions/<session_id>/scraped_pages/<slug>/` (dossier dérivé de
+   `app.py` : `f"sessions/{session_id}/scraped_pages/{slug}"`, `slug` venant
+   de `datasets.slugify(keywords)`). Tout `sessions/` est gitignored en
+   bloc, donc peu importe les mots-clés recherchés ou le visiteur, aucun
+   HTML scrapé ne finit committé par erreur
 2. `scrape_from_disk.PageParser` relit ces fichiers HTML, extrait le JSON
    embarqué (`html_to_disk.json_hunter`), et produit des listes de
    `SupplierDict` / `ProductDict`
 3. `data_quality.run_quality_checks` valide chaque ligne — **rejette la
    ligne fautive, garde le reste** (politique confirmée avec l'utilisateur,
    ne pas la changer en "tout bloquer" sans lui redemander)
-4. `engine_and_database.add_suppliers_to_db` / `add_products_to_db` insèrent
-   les lignes propres, avec rollback + skip sur `IntegrityError` (doublon)
+4. `engine_and_database.add_suppliers_to_db` / `add_products_to_db`
+   insèrent les lignes propres dans
+   `sessions/<session_id>/db/sourcing_intel_<slug>.sqlite`, avec rollback +
+   skip sur `IntegrityError` (doublon)
 5. `app.py` lit la base en lecture seule (`pandas.read_sql_query`, jamais
    d'écriture depuis cette voie) pour les graphiques fixes et la recherche
    en langage naturel (`nl_search.build_query_spec`/`apply_query_spec`,
@@ -234,6 +250,18 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
   etc.) n'a toujours pas été testé en conditions réelles au-delà de ce qui
   est documenté ici. **Considère tout le reste comme non validé jusqu'à
   preuve du contraire.**
+- **Rendu des graphiques ECharts non vérifiable dans le navigateur
+  automatisé utilisé pour les tests (2026-09-06)** : les composants
+  `streamlit_echarts.st_echarts` (les 3 historiques ET les 3 ajoutés dans
+  ce commit) restent à hauteur d'iframe 0 dans cet environnement, avec une
+  erreur JS interne à ECharts (`TypeError: Cannot read properties of
+  undefined (reading 'get')` dans `getPipeline`/`setData`) — reproduit à
+  l'identique sur les 3 graphiques déjà en prod avant tout changement,
+  donc pas une régression liée au code de l'app, plutôt un problème
+  d'environnement du bac à sable (version Chrome/CDP). Si ce problème
+  réapparaît en conditions réelles (vrai navigateur, vrai utilisateur),
+  ne pas le supposer résolu sur la seule base de ce commit — personne n'a
+  encore confirmé le rendu réel en dehors du bac à sable.
 
 ## Historique des décisions (pour éviter de revenir en arrière par erreur)
 
@@ -273,6 +301,20 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
   période d'inactivité (comportement standard du tier gratuit) — un visiteur
   doit cliquer « Yes, get this app back up! » pour la réveiller, redémarrage
   vérifié en conditions réelles le 2026-08-25.
+- **Clé ScrapingBee rendue obligatoire le 2026-09-06** — l'utilisateur ne
+  veut plus qu'une clé "démo"/partagée existe comme chemin normal côté UI
+  (elle avait fini par exister de fait sur le site public quand sa propre
+  clé personnelle a été utilisée pour des tests). Page Scraper : le champ
+  clé passe en étape 1 (avant les mots-clés), le bouton "Scrape live" est
+  désactivé tant qu'aucune clé n'est saisie (`disabled=not keywords or not
+  user_scrapingbee_key` dans `app.py::page_scraper`), et les messages
+  d'avertissement "clé démo" ont été retirés (un seul message "ta clé ne
+  fonctionne pas" reste, `sb_quota_exhausted_own_key` a disparu du
+  session_state). Le fallback technique `SCRAPINGBEE_API_KEY`/`.env` dans
+  `_resolve_scrapingbee_key` (`proxies_providers.py`) n'a pas été retiré du
+  code (filet de sécurité pour les tests locaux de l'auteur), mais ne doit
+  **jamais** être configuré dans `st.secrets` sur l'hébergement public —
+  sinon on recrée exactement le problème qu'on vient de corriger.
 
 ## Prochaines étapes possibles (non commencées)
 

@@ -10,6 +10,8 @@ shared name used for both the scraped-pages folder and the database file;
 
 from __future__ import annotations
 
+import shutil
+import time
 from pathlib import Path
 
 DB_PREFIX = "sourcing_intel"
@@ -56,3 +58,56 @@ def dataset_label(db_path: Path) -> str:
 	if stem == DB_PREFIX:
 		return f"{DB_PREFIX} (ancien, recherches mélangées)"
 	return stem.removeprefix(f"{DB_PREFIX}_").replace("_", " ")
+
+
+def cleanup_stale_sessions(root: Path = Path("sessions"), max_age_hours: int = 48) -> None:
+	"""Delete session directories whose newest file is older than max_age_hours.
+
+	Best-effort disk housekeeping for the per-session storage a live scrape
+	creates (see `app.py::page_scraper`) — without this, `sessions/` would
+	grow forever on the shared hosting disk, since nothing else ever removes
+	a visitor's directory after they leave. Runs on a shared, actively-written
+	disk (other visitors may be scraping concurrently), so every filesystem
+	call here tolerates `OSError`: a file can vanish between being listed by
+	`rglob` and being `stat`'d a moment later (a finished scrape's own
+	SQLite `-wal`/`-shm` churn, e.g.), and `shutil.rmtree` can hit a
+	permission error or a partially-removed tree. None of that should ever
+	propagate — this function is called from `app.py` at module scope on
+	every rerun, for every visitor, so an unhandled exception here would
+	take down the whole site, not just skip one cleanup pass.
+
+	:param root: Directory containing one subdirectory per session.
+	:type root: Path
+	:param max_age_hours: A session directory is deleted once its most
+		recently modified file is older than this, in hours.
+	:type max_age_hours: int
+	:return: None
+	:rtype: None
+	"""
+	if not root.exists():
+		return
+	cutoff = time.time() - max_age_hours * 3600
+	for session_dir in root.iterdir():
+		if not session_dir.is_dir():
+			continue
+		mtimes = []
+		for p in session_dir.rglob("*"):
+			try:
+				if not p.is_file():
+					continue
+				mtimes.append(p.stat().st_mtime)
+			except OSError:
+				# Vanished between rglob() listing it and stat() here —
+				# is_file() also calls stat() internally, so it must be
+				# inside the same guard — skip this one file rather than
+				# crashing the whole cleanup pass.
+				continue
+		try:
+			newest_mtime = max(mtimes) if mtimes else session_dir.stat().st_mtime
+		except OSError:
+			# Even the directory itself is no longer stat-able (e.g. removed
+			# by a concurrent cleanup pass) — treat it as "just modified" so
+			# it's simply skipped this round instead of raising.
+			newest_mtime = time.time()
+		if newest_mtime < cutoff:
+			shutil.rmtree(session_dir, ignore_errors=True)

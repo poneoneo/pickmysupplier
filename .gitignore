@@ -4,6 +4,7 @@ __pycache__/
 *.sqlite
 data_quality_report.json
 scraped_pages/
+sessions/
 .venv/
 .pytest_cache/
 .coverage
