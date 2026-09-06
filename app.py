@@ -24,6 +24,8 @@ from sourcing_intel_cli.chart_builder import (
 	build_box_option,
 	build_chart,
 	build_histogram_option,
+	build_map_option,
+	build_scatter_option,
 	suggest_chart_type,
 )
 from sourcing_intel_cli.data_quality import (
@@ -105,11 +107,19 @@ def load_products_with_suppliers(db_path: Path) -> pd.DataFrame:
       Product.review_count as review_count,
       Product.review_score as review_score,
       Product.trade_product as trade_product,
+      Product.alibaba_guranteed as alibaba_guranteed,
+      Product.certifications as certifications,
+      Product.ordered_or_sold as ordered_or_sold,
+      Product.shipping_time_score as shipping_time_score,
+      Product.is_full_promotion as is_full_promotion,
+      Product.is_customizable as is_customizable,
+      Product.is_instant_order as is_instant_order,
       Supplier.name as supplier_name,
       Supplier.country_name as country_name,
       Supplier.sopi_level as sopi_level,
       Supplier.years_as_gold_supplier as years_as_gold_supplier,
-      Supplier.supplier_service_score as supplier_service_score
+      Supplier.supplier_service_score as supplier_service_score,
+      Supplier.verification_mode as verification_mode
       FROM Product
       JOIN Supplier ON Product.supplier_id = Supplier.id"""
 	with sqlite3.connect(db_path) as con:
@@ -474,6 +484,42 @@ def page_explorer() -> None:
 		)
 		st_echarts(options=option_country, theme="dark", height="500px")
 
+		col3, col4 = st.columns(2)
+		with col3:
+			option_reliability = build_scatter_option(
+				df, "review_count", "review_score", "Review score vs. number of reviews"
+			)
+			st_echarts(options=option_reliability, theme="dark", height="500px")
+		with col4:
+			trade_coverage = (
+				df.groupby("country_name")["trade_product"]
+				.mean()
+				.mul(100)
+				.sort_values(ascending=False)
+				.head(10)
+				.reset_index()
+			)
+			option_trade = build_bar_option(
+				trade_coverage,
+				"country_name",
+				"trade_product",
+				"Trade Assurance coverage by country (%)",
+				horizontal=True,
+			)
+			st_echarts(options=option_trade, theme="dark", height="500px")
+
+		# One row per supplier, not per product — value_counts() in
+		# build_map_option would otherwise count a supplier once per product
+		# they list, inflating countries with a few prolific suppliers.
+		supplier_counts = df.drop_duplicates("supplier_name")
+		option_map = build_map_option(supplier_counts, "country_name", "Suppliers by country")
+		st_echarts(
+			options=option_map,
+			theme="dark",
+			height="500px",
+			map=Map("world", _load_world_geojson()),
+		)
+
 
 def page_scraper() -> None:
 	"""Live scraping controls, demo dataset loader, and the required ScrapingBee key field."""
@@ -614,9 +660,15 @@ def page_aide() -> None:
 		**Scraper** page to explore the app without depending on the site.
 
 		**Asking a natural-language question** — on the **Explore** page,
-		describe what you're looking for in a sentence (e.g. *"the 5
-		best-rated suppliers in China"*). The question is turned into a
-		deterministic filter/sort, never into AI-generated code run blindly.
+		describe what you're looking for in a sentence. The question is
+		turned into a deterministic filter/sort, never into AI-generated
+		code run blindly. A few examples of what you can ask:
+		- *"the 5 best-rated suppliers in China"*
+		- *"products with a review score above 4.5 but fewer than 10
+		  reviews"* — high score, barely any votes, worth a second look
+		- *"suppliers in China with Trade Assurance"*
+		- *"products that support instant order and are customizable"*
+		- *"the cheapest products with more than 100 units already sold"*
 
 		**Reading the charts** — a histogram shows a distribution
 		(e.g. price spread), a bar chart compares
