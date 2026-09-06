@@ -250,6 +250,18 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
   etc.) n'a toujours pas été testé en conditions réelles au-delà de ce qui
   est documenté ici. **Considère tout le reste comme non validé jusqu'à
   preuve du contraire.**
+- **Rendu des graphiques ECharts non vérifiable dans le navigateur
+  automatisé utilisé pour les tests (2026-09-06)** : les composants
+  `streamlit_echarts.st_echarts` (les 3 historiques ET les 3 ajoutés dans
+  ce commit) restent à hauteur d'iframe 0 dans cet environnement, avec une
+  erreur JS interne à ECharts (`TypeError: Cannot read properties of
+  undefined (reading 'get')` dans `getPipeline`/`setData`) — reproduit à
+  l'identique sur les 3 graphiques déjà en prod avant tout changement,
+  donc pas une régression liée au code de l'app, plutôt un problème
+  d'environnement du bac à sable (version Chrome/CDP). Si ce problème
+  réapparaît en conditions réelles (vrai navigateur, vrai utilisateur),
+  ne pas le supposer résolu sur la seule base de ce commit — personne n'a
+  encore confirmé le rendu réel en dehors du bac à sable.
 
 ## Historique des décisions (pour éviter de revenir en arrière par erreur)
 
