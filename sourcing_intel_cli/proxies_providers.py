@@ -14,7 +14,7 @@ from rich.progress import Progress, SpinnerColumn
 
 from . import SCRAPINGBEE_API_KEY
 from .html_to_disk import write_to_disk
-from .proxies_utils import urls_pusher, HTML_PAGE_RESULT
+from .proxies_utils import urls_pusher
 
 # Pinned to this ISO 3166-1 alpha-2 country for every request, so the target
 # site always resolves the same currency (USD) from our exit IP's
@@ -91,6 +91,56 @@ def _fetch_via_scrapingbee(api_request, endpoint: str, api_key: str, url: str):
 	return response
 
 
+def _collect_html_pages(
+	api_request,
+	endpoint: str,
+	api_key: str,
+	key_words: str,
+	page_results: int,
+	progress,
+	task,
+) -> list[str]:
+	"""Fetch every result page's HTML into a list local to this call.
+
+	A local list instead of the old module-global `HTML_PAGE_RESULT` — two
+	scrapes running at once (two different site visitors) used to share
+	and clobber the same global list; each call now gets its own.
+
+	:param api_request: A Playwright `APIRequestContext` (or a stub, see
+		`tests/test_proxies_providers.py`).
+	:param endpoint: The ScrapingBee REST endpoint.
+	:type endpoint: str
+	:param api_key: The resolved ScrapingBee API key.
+	:type api_key: str
+	:param key_words: The search term(s) for finding products.
+	:type key_words: str
+	:param page_results: The number of pages to scrape.
+	:type page_results: int
+	:param progress: The `rich.progress.Progress` bar to advance as pages complete.
+	:param task: The `Progress` task id returned by `progress.add_task`.
+	:return: The HTML content of every page that responded OK, in order.
+	:rtype: list[str]
+	"""
+	html_pages: list[str] = []
+	for url in urls_pusher(words=key_words, stop_at=page_results):
+		logger.info(f"Loading page {url.split('page=')[1]} ... ")
+		response = _fetch_via_scrapingbee(api_request, endpoint, api_key, url)
+		if not response.ok:
+			logger.warning(
+				f"ScrapingBee request failed for page {url.split('page=')[1]} "
+				f"(status {response.status}), skipping it."
+			)
+			continue
+		logger.info(
+			f"Returns the text representation of response body from page {url.split('page=')[1]} ... "
+		)
+		progress.start_task(task)
+		html_pages.append(response.text())
+		progress.update(task, advance=100 / page_results)
+		logger.info(f"Closing the page {url.split('page=')[1]} ... ")
+	return html_pages
+
+
 class ScrapingBeeProxyProvider:
 	SB_API_KEY = SCRAPINGBEE_API_KEY
 	ENDPOINT = "https://app.scrapingbee.com/api/v1/"
@@ -129,8 +179,6 @@ class ScrapingBeeProxyProvider:
 		if resolved_key == "":
 			rprint("[red]You need to set your  API key to use ScrapingBee proxies ... [/red]")
 			raise RuntimeError("You need to set your ScrapingBee API key to use ScrapingBee proxies.")
-		global HTML_PAGE_RESULT
-		HTML_PAGE_RESULT.clear()
 		with Progress(
 			SpinnerColumn(finished_text="[bold green]finished ✓[/bold green]"),
 			*Progress.get_default_columns(),
@@ -143,24 +191,10 @@ class ScrapingBeeProxyProvider:
 			playwright = sync_playwright().start()
 			api_request = playwright.request.new_context()
 			try:
-				for url in urls_pusher(words=key_words, stop_at=page_results):
-					logger.info(f"Loading page {url.split('page=')[1]} ... ")
-					response = _fetch_via_scrapingbee(api_request, cls.ENDPOINT, resolved_key, url)
-					if not response.ok:
-						logger.warning(
-							f"ScrapingBee request failed for page {url.split('page=')[1]} "
-							f"(status {response.status}), skipping it."
-						)
-						continue
-					logger.info(
-						f"Returns the text representation of response body from page {url.split('page=')[1]} ... "
-					)
-					progress.start_task(task)
-					html_content = response.text()
-					progress.update(task, advance=100 / page_results)
-					HTML_PAGE_RESULT.append(html_content)
-					logger.info(f"Closing the page {url.split('page=')[1]} ... ")
+				html_pages = _collect_html_pages(
+					api_request, cls.ENDPOINT, resolved_key, key_words, page_results, progress, task
+				)
 			finally:
 				api_request.dispose()
 				playwright.stop()
-		write_to_disk(save_in, HTML_PAGE_RESULT)
+		write_to_disk(save_in, html_pages)

@@ -13,6 +13,7 @@ from sourcing_intel_cli.proxies_providers import (
 	ScrapingBeeKeyError,
 	_resolve_scrapingbee_key,
 	_fetch_via_scrapingbee,
+	_collect_html_pages,
 )
 
 
@@ -86,3 +87,60 @@ class TestFetchViaScrapingbee:
 		response = _fetch_via_scrapingbee(stub, "https://endpoint.example", "my-key", "https://target.example")
 		assert response.ok is True
 		assert response.text() == "<html>ok</html>"
+
+
+class _SequentialStubAPIRequest:
+	"""Returns a different stubbed response for each successive `.get()` call."""
+
+	def __init__(self, responses):
+		self._responses = list(responses)
+		self.urls_requested = []
+
+	def get(self, url, params=None, timeout=None):
+		self.urls_requested.append(url)
+		return self._responses[len(self.urls_requested) - 1]
+
+
+class _NoOpProgress:
+	def start_task(self, task):
+		pass
+
+	def update(self, task, advance):
+		pass
+
+
+class TestCollectHtmlPages:
+	def test_collects_html_from_each_successful_page(self):
+		stub = _SequentialStubAPIRequest(
+			[_StubResponse(200, "<html>page1</html>"), _StubResponse(200, "<html>page2</html>")]
+		)
+		pages = _collect_html_pages(
+			stub, "https://endpoint.example", "my-key", "wireless earbuds", 2, _NoOpProgress(), task=None
+		)
+		assert pages == ["<html>page1</html>", "<html>page2</html>"]
+
+	def test_skips_failed_pages_without_raising(self):
+		stub = _SequentialStubAPIRequest([_StubResponse(500), _StubResponse(200, "<html>page2</html>")])
+		pages = _collect_html_pages(
+			stub, "https://endpoint.example", "my-key", "wireless earbuds", 2, _NoOpProgress(), task=None
+		)
+		assert pages == ["<html>page2</html>"]
+
+	def test_two_calls_do_not_share_state(self):
+		# Regression test: this loop used to accumulate into a module-global
+		# list (`HTML_PAGE_RESULT`) shared by every call — a second scrape
+		# (a different site visitor, running concurrently) would see the
+		# first scrape's pages mixed into its own results. Each call must
+		# return its own independent list.
+		first_stub = _SequentialStubAPIRequest([_StubResponse(200, "<html>first</html>")])
+		first_pages = _collect_html_pages(
+			first_stub, "https://endpoint.example", "my-key", "thinkpad", 1, _NoOpProgress(), task=None
+		)
+
+		second_stub = _SequentialStubAPIRequest([_StubResponse(200, "<html>second</html>")])
+		second_pages = _collect_html_pages(
+			second_stub, "https://endpoint.example", "my-key", "wireless earbuds", 1, _NoOpProgress(), task=None
+		)
+
+		assert first_pages == ["<html>first</html>"]
+		assert second_pages == ["<html>second</html>"]

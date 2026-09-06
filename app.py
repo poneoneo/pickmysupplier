@@ -10,6 +10,7 @@ Run with: streamlit run app.py
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 
 import pandas as pd
@@ -23,13 +24,21 @@ from sourcing_intel_cli.chart_builder import (
 	build_box_option,
 	build_chart,
 	build_histogram_option,
+	build_map_option,
+	build_scatter_option,
 	suggest_chart_type,
 )
 from sourcing_intel_cli.data_quality import (
 	run_quality_checks,
 	write_quality_report,
 )
-from sourcing_intel_cli.datasets import DB_PREFIX, dataset_label, discover_databases, slugify
+from sourcing_intel_cli.datasets import (
+	DB_PREFIX,
+	cleanup_stale_sessions,
+	dataset_label,
+	discover_databases,
+	slugify,
+)
 from sourcing_intel_cli.demo_data import generate_demo_data
 from sourcing_intel_cli.engine_and_database import (
 	add_products_to_db,
@@ -42,6 +51,25 @@ from sourcing_intel_cli.proxies_providers import ScrapingBeeProxyProvider, Scrap
 from sourcing_intel_cli.product_naming import summarize_product_names
 from sourcing_intel_cli.scrape_from_disk import PageParser
 from sourcing_intel_cli.typed_datas import ProductDict, SupplierDict
+
+
+# ---------------------------------------------------------------------------
+# Session identity
+# ---------------------------------------------------------------------------
+
+
+def _get_session_id() -> str:
+	"""Stable per-visit identifier used to namespace a visitor's scraped data.
+
+	Generated once per Streamlit session and cached in `st.session_state` —
+	scraped HTML and per-search databases are stored under
+	`sessions/<session_id>/` so one visitor never sees another's data (see
+	docs/superpowers/specs/2026-09-05-session-scoped-data-isolation-design.md).
+
+	:return: A short hex id, stable for the lifetime of this browser session.
+	:rtype: str
+	"""
+	return st.session_state.setdefault("session_id", uuid.uuid4().hex[:12])
 
 
 # ---------------------------------------------------------------------------
@@ -79,11 +107,19 @@ def load_products_with_suppliers(db_path: Path) -> pd.DataFrame:
       Product.review_count as review_count,
       Product.review_score as review_score,
       Product.trade_product as trade_product,
+      Product.alibaba_guranteed as alibaba_guranteed,
+      Product.certifications as certifications,
+      Product.ordered_or_sold as ordered_or_sold,
+      Product.shipping_time_score as shipping_time_score,
+      Product.is_full_promotion as is_full_promotion,
+      Product.is_customizable as is_customizable,
+      Product.is_instant_order as is_instant_order,
       Supplier.name as supplier_name,
       Supplier.country_name as country_name,
       Supplier.sopi_level as sopi_level,
       Supplier.years_as_gold_supplier as years_as_gold_supplier,
-      Supplier.supplier_service_score as supplier_service_score
+      Supplier.supplier_service_score as supplier_service_score,
+      Supplier.verification_mode as verification_mode
       FROM Product
       JOIN Supplier ON Product.supplier_id = Supplier.id"""
 	with sqlite3.connect(db_path) as con:
@@ -108,7 +144,10 @@ def _load_world_geojson() -> dict:
 
 
 def _validate_and_insert(
-	raw_suppliers: list[SupplierDict], raw_products: list[ProductDict], db_name: str
+	raw_suppliers: list[SupplierDict],
+	raw_products: list[ProductDict],
+	db_name: str,
+	report_path: str | None = None,
 ) -> None:
 	"""Run the quality agent then write clean rows to the DB, with Streamlit feedback.
 
@@ -122,10 +161,22 @@ def _validate_and_insert(
 	:param db_name: Database name (without `.sqlite`) to write to — one per
 		search, so different searches' results never mix.
 	:type db_name: str
+	:param report_path: Where to write the quality report JSON. `None` (the
+		default, used by the demo dataset loader — non-sensitive, shared data)
+		keeps `write_quality_report`'s own default, a single shared
+		`data_quality_report.json` at the project root. The live-scrape call
+		site passes a `sessions/<session_id>/...` path instead, since that
+		file is otherwise the last scrape-derived artifact written outside a
+		visitor's own session directory.
+	:type report_path: str | None
 	"""
 	with st.spinner("Running data quality checks..."):
 		suppliers, products, issues = run_quality_checks(raw_suppliers, raw_products)
-		write_quality_report(issues)
+		if report_path:
+			Path(report_path).parent.mkdir(parents=True, exist_ok=True)
+			write_quality_report(issues, path=report_path)
+		else:
+			write_quality_report(issues)
 
 	if issues:
 		st.warning(f"{len(issues)} row(s) rejected by the quality agent — see details below.")
@@ -185,17 +236,15 @@ def page_accueil() -> None:
 		"""
 	)
 	if st.session_state.get("sb_quota_exhausted"):
-		if st.session_state.get("sb_quota_exhausted_own_key"):
-			st.warning(
-				"⚠️ Your ScrapingBee key isn't working (out of credits, "
-				"or invalid/expired) — check your ScrapingBee account or try again later."
-			)
-		else:
-			st.warning(
-				"⚠️ The demo ScrapingBee key isn't working right now "
-				"(out of credits or expired) — get your own for free, "
-				"see the **Help** page."
-			)
+		st.warning(
+			"⚠️ Your ScrapingBee key isn't working (out of credits, "
+			"or invalid/expired) — check your ScrapingBee account or try again later."
+		)
+	st.caption(
+		"There's no shared scraping key on this site — grab your own free "
+		"ScrapingBee key (2 minutes) on the **Scraper** page before your "
+		"first search."
+	)
 	st.markdown("**To get started:**")
 	col_explorer, col_scraper, col_aide = st.columns(3)
 	with col_explorer:
@@ -209,13 +258,23 @@ def page_accueil() -> None:
 def page_explorer() -> None:
 	"""Dataset picker + natural-language search + charts."""
 	st.title("Explore")
-	databases = discover_databases()
+	session_id = _get_session_id()
+	databases = discover_databases(root=Path(f"sessions/{session_id}/db"))
+	demo_db = Path(f"{DB_PREFIX}_demo.sqlite")
+	demo_db_exists = demo_db.exists()
 
-	if not databases:
+	if not databases and not demo_db_exists:
 		st.info("No data yet — go to the **Scraper** page to launch a scrape.")
 		return
 
+	# The shared demo dataset gets its own distinct label, built directly
+	# rather than via `dataset_label(demo_db)` — that would just return
+	# "demo", which collides with (and, since it's added last, silently
+	# overwrites in this dict) a visitor's own session-scoped search for the
+	# literal keyword "demo".
 	dataset_labels = {dataset_label(p): p for p in databases}
+	if demo_db_exists:
+		dataset_labels["demo (shared)"] = demo_db
 	selected_label = st.selectbox(
 		"Dataset to explore",
 		list(dataset_labels.keys()),
@@ -425,38 +484,80 @@ def page_explorer() -> None:
 		)
 		st_echarts(options=option_country, theme="dark", height="500px")
 
+		col3, col4 = st.columns(2)
+		with col3:
+			option_reliability = build_scatter_option(
+				df, "review_count", "review_score", "Review score vs. number of reviews"
+			)
+			st_echarts(options=option_reliability, theme="dark", height="500px")
+		with col4:
+			trade_coverage = (
+				df.groupby("country_name")["trade_product"]
+				.mean()
+				.mul(100)
+				.sort_values(ascending=False)
+				.head(10)
+				.reset_index()
+			)
+			option_trade = build_bar_option(
+				trade_coverage,
+				"country_name",
+				"trade_product",
+				"Trade Assurance coverage by country (%)",
+				horizontal=True,
+			)
+			st_echarts(options=option_trade, theme="dark", height="500px")
+
+		# One row per supplier, not per product — value_counts() in
+		# build_map_option would otherwise count a supplier once per product
+		# they list, inflating countries with a few prolific suppliers.
+		supplier_counts = df.drop_duplicates("supplier_name")
+		option_map = build_map_option(supplier_counts, "country_name", "Suppliers by country")
+		st_echarts(
+			options=option_map,
+			theme="dark",
+			height="500px",
+			map=Map("world", _load_world_geojson()),
+		)
+
 
 def page_scraper() -> None:
-	"""Live scraping controls, demo dataset loader, and the ScrapingBee BYO-key field."""
+	"""Live scraping controls, demo dataset loader, and the required ScrapingBee key field."""
 	st.title("Scraper")
 
 	if st.session_state.get("sb_quota_exhausted"):
-		if st.session_state.get("sb_quota_exhausted_own_key"):
-			st.warning(
-				"⚠️ Your ScrapingBee key isn't working (out of credits, "
-				"or invalid/expired) — check your ScrapingBee account or try again later."
-			)
-		else:
-			st.warning(
-				"⚠️ The demo ScrapingBee key isn't working right now "
-				"(out of credits or expired) — get your own for free "
-				"(see the **Help** page) or enter it below."
-			)
+		st.warning(
+			"⚠️ Your ScrapingBee key isn't working (out of credits, "
+			"or invalid/expired) — check your ScrapingBee account or try again later."
+		)
 
-	keywords = st.text_input("Keywords", placeholder="e.g. wireless earbuds")
-	page_results = st.number_input("Number of pages", min_value=1, max_value=50, value=5)
-
+	st.subheader("1. Get your free ScrapingBee key")
+	st.caption(
+		"There's no shared key on this site — each visitor scrapes with "
+		"their own free ScrapingBee account, so your searches never "
+		"compete with anyone else's quota."
+	)
+	st.link_button("Get a free key at scrapingbee.com →", "https://www.scrapingbee.com")
 	user_scrapingbee_key = st.text_input(
-		"Your ScrapingBee key (optional)",
+		"Your ScrapingBee key",
 		type="password",
-		help="Leave empty to use the site's demo key. See the "
-		"Help page to find your own, for free.",
+		help="See the Help page for step-by-step instructions to find it, for free.",
 		key="user_scrapingbee_key",
 	)
 
-	if st.button("Scrape live", type="primary", disabled=not keywords):
+	st.subheader("2. Scrape")
+	keywords = st.text_input("Keywords", placeholder="e.g. wireless earbuds")
+	page_results = st.number_input("Number of pages", min_value=1, max_value=50, value=5)
+
+	if not user_scrapingbee_key:
+		st.caption("⚠️ Enter your ScrapingBee key above to enable scraping.")
+
+	if st.button(
+		"Scrape live", type="primary", disabled=not keywords or not user_scrapingbee_key
+	):
+		session_id = _get_session_id()
 		slug = slugify(keywords)
-		save_in_folder = f"scraped_pages/{slug}"
+		save_in_folder = f"sessions/{session_id}/scraped_pages/{slug}"
 
 		with st.spinner("Scraping in progress (can take several minutes)..."):
 			try:
@@ -469,18 +570,10 @@ def page_scraper() -> None:
 			except ScrapingBeeKeyError as e:
 				logger.warning(f"ScrapingBee key problem: {e}")
 				st.session_state["sb_quota_exhausted"] = True
-				st.session_state["sb_quota_exhausted_own_key"] = bool(user_scrapingbee_key)
-				if user_scrapingbee_key:
-					st.error(
-						"Your ScrapingBee key isn't working (out of credits, or "
-						"invalid/expired). Check your ScrapingBee account or try again later."
-					)
-				else:
-					st.error(
-						"The demo ScrapingBee key isn't working (out of credits or "
-						"expired). Get your own for free (see the Help page) "
-						"or enter it above."
-					)
+				st.error(
+					"Your ScrapingBee key isn't working (out of credits, or "
+					"invalid/expired). Check your ScrapingBee account or try again later."
+				)
 				st.stop()
 			except Exception:  # noqa: BLE001
 				logger.exception("Scraping failed")
@@ -497,7 +590,12 @@ def page_scraper() -> None:
 				st.error("Analyzing the scraped pages failed. See logs/app.log for details.")
 				st.stop()
 
-		_validate_and_insert(raw_suppliers, raw_products, db_name=f"{DB_PREFIX}_{slug}")
+		_validate_and_insert(
+			raw_suppliers,
+			raw_products,
+			db_name=f"sessions/{session_id}/db/{DB_PREFIX}_{slug}",
+			report_path=f"sessions/{session_id}/data_quality_report.json",
+		)
 
 	st.divider()
 	st.caption(
@@ -513,9 +611,13 @@ def page_aide() -> None:
 	"""Onboarding guide: free ScrapingBee key, data architecture, how to use the app."""
 	st.title("❓ Help")
 
-	st.header("1. Get a free ScrapingBee key")
+	st.header("1. Get your free ScrapingBee key")
 	st.markdown(
 		"""
+		There's no shared scraping key on this site — every visitor needs
+		their own, free ScrapingBee account. It's the first step, before
+		you can run any live search:
+
 		1. Go to [scrapingbee.com](https://www.scrapingbee.com) and create a
 		   free account (email + password, or via Google/GitHub).
 		2. Once logged in, your dashboard shows your API key at the
@@ -524,7 +626,8 @@ def page_aide() -> None:
 		   exact amount on their pricing page, it can change) —
 		   plenty to test this app.
 		4. Come back to the **Scraper** page on this site and paste your key into the
-		   *"Your ScrapingBee key (optional)"* field.
+		   *"Your ScrapingBee key"* field — the *"Scrape live"* button
+		   stays disabled until you do.
 		"""
 	)
 
@@ -538,6 +641,13 @@ def page_aide() -> None:
 		On the **Explore** page, the *"Dataset to
 		explore"* selector lets you pick which of your past searches
 		to look at — including the demo dataset.
+
+		**Your data only lasts for this browser session.** Refreshing the
+		page or coming back later starts a new session, and your previous
+		searches won't show up in the selector anymore — re-run the scrape
+		if you need that data again. Session data is also automatically
+		deleted from the server after 48 hours, whether you're still around
+		or not.
 		"""
 	)
 
@@ -550,9 +660,15 @@ def page_aide() -> None:
 		**Scraper** page to explore the app without depending on the site.
 
 		**Asking a natural-language question** — on the **Explore** page,
-		describe what you're looking for in a sentence (e.g. *"the 5
-		best-rated suppliers in China"*). The question is turned into a
-		deterministic filter/sort, never into AI-generated code run blindly.
+		describe what you're looking for in a sentence. The question is
+		turned into a deterministic filter/sort, never into AI-generated
+		code run blindly. A few examples of what you can ask:
+		- *"the 5 best-rated suppliers in China"*
+		- *"products with a review score above 4.5 but fewer than 10
+		  reviews"* — high score, barely any votes, worth a second look
+		- *"suppliers in China with Trade Assurance"*
+		- *"products that support instant order and are customizable"*
+		- *"the cheapest products with more than 100 units already sold"*
 
 		**Reading the charts** — a histogram shows a distribution
 		(e.g. price spread), a bar chart compares
@@ -568,6 +684,34 @@ def page_aide() -> None:
 # ---------------------------------------------------------------------------
 
 st.set_page_config(page_title="PickMySupplier", page_icon="🤏🛒", layout="wide")
+
+
+@st.cache_resource(ttl=3600)
+def _cleanup_stale_sessions_once() -> None:
+	"""Run `cleanup_stale_sessions` at most once per hour across all visitors.
+
+	`st.cache_resource` caches at the process level (shared by every
+	visitor, unlike `st.session_state`) — with a 1-hour TTL this runs the
+	disk housekeeping once per hour for the whole site, no matter how many
+	concurrent sessions there are, without a separate scheduler.
+
+	Note `st.cache_resource` does NOT cache an exception raised by the
+	wrapped function — it would just re-raise on every rerun, for every
+	visitor, turning this best-effort housekeeping into a permanent outage.
+	`cleanup_stale_sessions` already tolerates the individual filesystem
+	errors it can hit, but this `try/except` is defense in depth on top of
+	that: best-effort housekeeping must never be able to take the app down.
+
+	:return: None
+	:rtype: None
+	"""
+	try:
+		cleanup_stale_sessions()
+	except Exception as e:  # noqa: BLE001
+		logger.warning(f"Stale-session cleanup failed, continuing without it: {e}")
+
+
+_cleanup_stale_sessions_once()
 
 PAGE_ACCUEIL = st.Page(page_accueil, title="Home", icon="🏠", default=True)
 PAGE_EXPLORER = st.Page(page_explorer, title="Explore", icon="🔍")

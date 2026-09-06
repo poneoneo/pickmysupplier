@@ -28,6 +28,15 @@ def db_engine():
 	engine.dispose()
 
 
+class TestCreateDbEngine:
+	def test_creates_missing_parent_directories_for_db_name(self, tmp_path, monkeypatch):
+		monkeypatch.chdir(tmp_path)
+		engine = create_db_engine(db_name="sessions/abc123/db/sourcing_intel_thinkpad")
+		save_all_changes(engine_db=engine, sql_model=SQLModel)
+		assert (tmp_path / "sessions" / "abc123" / "db" / "sourcing_intel_thinkpad.sqlite").exists()
+		engine.dispose()
+
+
 def _supplier(name="Shenzhen Acme Co."):
 	return {
 		"name": name,
