@@ -92,13 +92,15 @@ def cleanup_stale_sessions(root: Path = Path("sessions"), max_age_hours: int = 4
 			continue
 		mtimes = []
 		for p in session_dir.rglob("*"):
-			if not p.is_file():
-				continue
 			try:
+				if not p.is_file():
+					continue
 				mtimes.append(p.stat().st_mtime)
 			except OSError:
-				# Vanished between rglob() listing it and stat() here — skip
-				# this one file rather than crashing the whole cleanup pass.
+				# Vanished between rglob() listing it and stat() here —
+				# is_file() also calls stat() internally, so it must be
+				# inside the same guard — skip this one file rather than
+				# crashing the whole cleanup pass.
 				continue
 		try:
 			newest_mtime = max(mtimes) if mtimes else session_dir.stat().st_mtime
