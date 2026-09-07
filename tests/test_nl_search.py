@@ -11,7 +11,12 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
-from sourcing_intel_cli.nl_search import apply_query_spec, build_query_spec, build_value_hints
+from sourcing_intel_cli.nl_search import (
+	apply_query_spec,
+	build_query_spec,
+	build_value_hints,
+	generate_dataset_context,
+)
 
 
 class TestBuildValueHints:
@@ -326,3 +331,109 @@ class TestBuildQuerySpec:
 				assert False, "expected RuntimeError"
 			except RuntimeError:
 				pass
+
+
+class TestGenerateDatasetContext:
+	"""Never raises — returns None on any failure so the caller (app.py's
+	_get_dataset_context) can fall back to static content.
+	"""
+
+	def test_returns_intro_and_questions_from_model_response(self):
+		response = {
+			"intro": "Sourcing wireless earbuds? Here's how to compare suppliers fast.",
+			"questions": [
+				"Which suppliers have the best supplier_service_score?",
+				"What is the distribution of min_price?",
+			],
+		}
+		with (
+			patch("sourcing_intel_cli.nl_search.GROQ_API_KEY", "test-key"),
+			patch("sourcing_intel_cli.nl_search.Groq", return_value=_mock_groq_client(response)),
+		):
+			result = generate_dataset_context(_df(), "wireless earbuds")
+		assert result == {"intro": response["intro"], "questions": response["questions"]}
+
+	def test_strips_whitespace_from_intro_and_questions(self):
+		response = {"intro": "  Some intro.  ", "questions": ["  A question?  "]}
+		with (
+			patch("sourcing_intel_cli.nl_search.GROQ_API_KEY", "test-key"),
+			patch("sourcing_intel_cli.nl_search.Groq", return_value=_mock_groq_client(response)),
+		):
+			result = generate_dataset_context(_df(), "wireless earbuds")
+		assert result == {"intro": "Some intro.", "questions": ["A question?"]}
+
+	def test_drops_non_string_or_blank_questions(self):
+		response = {"intro": "Intro.", "questions": ["Real question?", "", "  ", 42, None]}
+		with (
+			patch("sourcing_intel_cli.nl_search.GROQ_API_KEY", "test-key"),
+			patch("sourcing_intel_cli.nl_search.Groq", return_value=_mock_groq_client(response)),
+		):
+			result = generate_dataset_context(_df(), "wireless earbuds")
+		assert result["questions"] == ["Real question?"]
+
+	def test_returns_none_when_api_key_missing(self):
+		with patch("sourcing_intel_cli.nl_search.GROQ_API_KEY", ""):
+			assert generate_dataset_context(_df(), "wireless earbuds") is None
+
+	def test_returns_none_on_api_error(self):
+		client = MagicMock()
+		client.chat.completions.create.side_effect = RuntimeError("Groq is down")
+		with (
+			patch("sourcing_intel_cli.nl_search.GROQ_API_KEY", "test-key"),
+			patch("sourcing_intel_cli.nl_search.Groq", return_value=client),
+		):
+			assert generate_dataset_context(_df(), "wireless earbuds") is None
+
+	def test_returns_none_on_invalid_json(self):
+		client = MagicMock()
+		completion = MagicMock()
+		completion.choices = [MagicMock(message=MagicMock(content="not json"))]
+		client.chat.completions.create.return_value = completion
+		with (
+			patch("sourcing_intel_cli.nl_search.GROQ_API_KEY", "test-key"),
+			patch("sourcing_intel_cli.nl_search.Groq", return_value=client),
+		):
+			assert generate_dataset_context(_df(), "wireless earbuds") is None
+
+	def test_returns_none_when_intro_missing(self):
+		response = {"questions": ["A question?"]}
+		with (
+			patch("sourcing_intel_cli.nl_search.GROQ_API_KEY", "test-key"),
+			patch("sourcing_intel_cli.nl_search.Groq", return_value=_mock_groq_client(response)),
+		):
+			assert generate_dataset_context(_df(), "wireless earbuds") is None
+
+	def test_returns_none_when_intro_is_blank(self):
+		response = {"intro": "   ", "questions": ["A question?"]}
+		with (
+			patch("sourcing_intel_cli.nl_search.GROQ_API_KEY", "test-key"),
+			patch("sourcing_intel_cli.nl_search.Groq", return_value=_mock_groq_client(response)),
+		):
+			assert generate_dataset_context(_df(), "wireless earbuds") is None
+
+	def test_returns_none_when_questions_not_a_list(self):
+		response = {"intro": "Intro.", "questions": "not a list"}
+		with (
+			patch("sourcing_intel_cli.nl_search.GROQ_API_KEY", "test-key"),
+			patch("sourcing_intel_cli.nl_search.Groq", return_value=_mock_groq_client(response)),
+		):
+			assert generate_dataset_context(_df(), "wireless earbuds") is None
+
+	def test_returns_none_when_all_questions_are_blank(self):
+		response = {"intro": "Intro.", "questions": ["", "   "]}
+		with (
+			patch("sourcing_intel_cli.nl_search.GROQ_API_KEY", "test-key"),
+			patch("sourcing_intel_cli.nl_search.Groq", return_value=_mock_groq_client(response)),
+		):
+			assert generate_dataset_context(_df(), "wireless earbuds") is None
+
+	def test_prompt_includes_keywords_and_uses_json_mode(self):
+		client = _mock_groq_client({"intro": "Intro.", "questions": ["Q?"]})
+		with (
+			patch("sourcing_intel_cli.nl_search.GROQ_API_KEY", "test-key"),
+			patch("sourcing_intel_cli.nl_search.Groq", return_value=client),
+		):
+			generate_dataset_context(_df(), "wireless earbuds")
+		kwargs = client.chat.completions.create.call_args.kwargs
+		assert kwargs["response_format"] == {"type": "json_object"}
+		assert "wireless earbuds" in kwargs["messages"][0]["content"]
