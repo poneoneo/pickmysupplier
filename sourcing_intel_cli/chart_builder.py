@@ -706,36 +706,17 @@ def build_chart(
 	return None
 
 
-# Fallback order tried, per candidate question, after `suggest_chart_type`'s
-# own guess fails to produce a chart — see `verify_example_questions`.
-_FALLBACK_CHART_TYPES = ("bar", "histogram", "box", "scatter", "map")
-
-
 def verify_example_questions(
 	df: pd.DataFrame, candidates: list[str], min_keep: int = 4, max_keep: int = 8
 ) -> list[dict] | None:
-	"""Keep the candidate NL questions a chart can actually be built for on `df`.
+	"""Keep only the candidate NL questions that actually produce a chart on `df`.
 
-	`suggest_chart_type` is a keyword classifier, not a guarantee — a
-	question can *sound* like a correlation ("X vs Y") and still not have
-	two numeric columns available for a scatter on this particular
-	dataset, even though the exact same question would happily render as
-	a bar or box chart instead. Treating its guess as a hard requirement
-	threw away real, sensible questions purely because the wording implied
-	the wrong chart type for this dataset — so each candidate now tries
-	`suggest_chart_type`'s guess first, then falls back through
-	`_FALLBACK_CHART_TYPES` until one actually builds; the question is a
-	*hint* pointing `build_chart` at what to try, not a locked-in verdict.
-	A question is only dropped if literally no chart type works for it on
-	this dataset (in practice, only when the dataset itself lacks both a
-	usable numeric and a usable categorical column at all).
-
-	Either way, never trusts whatever generated the candidates (an LLM,
-	see `nl_search.generate_dataset_context`) to also pick a chart type —
-	that model has no way to know which column combinations this specific
-	dataset has non-empty, plottable data for; the type shown next to each
-	kept question is always whichever one this function's own deterministic
-	pipeline (`build_chart`) actually confirmed works.
+	Each candidate is run through this module's own deterministic pipeline
+	(`suggest_chart_type` then `build_chart`) — never trusts whatever
+	generated the candidates (an LLM, see
+	`nl_search.generate_dataset_context`) to also pick a correct chart
+	type, since that model has no way to know which column combinations
+	this specific dataset actually has non-empty, plottable data for.
 
 	:param df: The dataset the questions were generated for.
 	:type df: pd.DataFrame
@@ -756,12 +737,9 @@ def verify_example_questions(
 	for question in candidates:
 		if not isinstance(question, str) or not question.strip():
 			continue
-		suggested = suggest_chart_type(question)
-		attempt_order = [suggested] + [t for t in _FALLBACK_CHART_TYPES if t != suggested]
-		for chart_type in attempt_order:
-			if build_chart(df, chart_type, title=question) is not None:
-				verified.append({"question": question.strip(), "chart_type": chart_type})
-				break
+		chart_type = suggest_chart_type(question)
+		if build_chart(df, chart_type, title=question) is not None:
+			verified.append({"question": question.strip(), "chart_type": chart_type})
 		if len(verified) >= max_keep:
 			break
 	if len(verified) < min_keep:
