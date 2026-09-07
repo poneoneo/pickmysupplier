@@ -459,22 +459,36 @@ class TestVerifyExampleQuestions:
 			}
 		]
 
-	def test_drops_a_question_that_cannot_build_a_chart_on_this_dataset(self):
-		# suggest_chart_type resolves this to "scatter", but this df has only
-		# one numeric column — build_chart needs two for a scatter, so it
-		# can't actually be built here.
+	def test_falls_back_to_a_different_chart_type_when_the_suggested_one_fails(self):
+		# suggest_chart_type resolves this to "scatter" (the " vs " keyword),
+		# but this df has only one numeric column — build_chart can't build
+		# a scatter (needs two). The question itself is still perfectly
+		# sensible on this dataset, so it must not be thrown away: falling
+		# back to "histogram" (needs only one numeric column) is exactly the
+		# behavior this test pins down.
 		one_numeric_col_df = pd.DataFrame({"min_price": [1.0, 2.0, 3.0]})
 		result = verify_example_questions(
 			one_numeric_col_df,
+			["min_price vs something else"],
+			min_keep=1,
+		)
+		assert result == [{"question": "min_price vs something else", "chart_type": "histogram"}]
+
+	def test_drops_a_question_that_cannot_build_any_chart_on_this_dataset(self):
+		# A fully empty dataframe: build_chart returns None for every chart
+		# type unconditionally (df.empty short-circuits first), so no
+		# fallback can rescue this one — the only case where a candidate is
+		# genuinely dropped.
+		result = verify_example_questions(
+			pd.DataFrame(),
 			["Is there a correlation between min_price and something else?"],
 			min_keep=0,
 		)
 		assert result == []
 
 	def test_returns_none_when_fewer_than_min_keep_verify(self):
-		one_numeric_col_df = pd.DataFrame({"min_price": [1.0, 2.0, 3.0]})
 		result = verify_example_questions(
-			one_numeric_col_df,
+			pd.DataFrame(),
 			["Is there a correlation between min_price and something else?"],
 			min_keep=1,
 		)
