@@ -28,6 +28,7 @@ from sourcing_intel_cli.chart_builder import (
 	build_scatter_option,
 	render_echarts_html,
 	suggest_chart_type,
+	verify_example_questions,
 )
 from sourcing_intel_cli.data_quality import (
 	run_quality_checks,
@@ -47,7 +48,7 @@ from sourcing_intel_cli.engine_and_database import (
 	create_db_engine,
 	save_all_changes,
 )
-from sourcing_intel_cli.nl_search import apply_query_spec, build_query_spec
+from sourcing_intel_cli.nl_search import apply_query_spec, build_query_spec, generate_dataset_context
 from sourcing_intel_cli.proxies_providers import ScrapingBeeProxyProvider, ScrapingBeeKeyError
 from sourcing_intel_cli.product_naming import summarize_product_names
 from sourcing_intel_cli.scrape_from_disk import PageParser
@@ -224,6 +225,7 @@ def _validate_and_insert(
 
 	st.success(f"{len(suppliers)} supplier(s) and {len(products)} product(s) added.")
 	st.cache_data.clear()
+	st.page_link(PAGE_EXPLORER, label="Explore your results →", icon="🔍")
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +266,87 @@ def page_accueil() -> None:
 		st.page_link(PAGE_AIDE, label="Usage guide")
 
 
+# Used whenever `generate_dataset_context` isn't available (no GROQ_API_KEY,
+# the call failed, or too few of its questions verified against this
+# dataset — see `_get_dataset_context`) and, unconditionally, for the shared
+# demo dataset (adapting copy to "each user's own scrape" doesn't apply to
+# data that's identical for everyone).
+_STATIC_DATASET_CONTEXT = {
+	"intro": (
+		"Put yourself in the shoes of an entrepreneur who wants to source a "
+		"product on Alibaba. You have hundreds of suppliers in front of you, all "
+		"with different prices, ratings, and guarantees — you want to find the best "
+		"suppliers, at the best price, without spending hours comparing rows by hand. "
+		"That's exactly what this search does: ask your question in plain language, "
+		"it filters/sorts the data for you."
+	),
+	"examples": [
+		{"question": "Which 5 suppliers have the best supplier_service_score?", "chart_type": "bar"},
+		{"question": "What is the distribution of minimum prices?", "chart_type": "histogram"},
+		{
+			"question": "What is the spread of product_score by supplier country?",
+			"chart_type": "box",
+		},
+		{
+			"question": "Is there a correlation between product_score and min_price?",
+			"chart_type": "scatter",
+		},
+		{"question": "Compare the average product price by supplier country.", "chart_type": "bar"},
+		{
+			"question": "What is the distribution of MOQ (minimum order quantity)?",
+			"chart_type": "histogram",
+		},
+		{"question": "Which countries are represented among the suppliers?", "chart_type": "map"},
+	],
+}
+
+_CHART_TYPE_LABELS = {
+	"histogram": "Histogram",
+	"bar": "Bar",
+	"box": "Box plot",
+	"scatter": "Scatter",
+	"map": "World map",
+}
+
+
+@st.cache_data
+def _get_dataset_context(db_path: Path, keywords: str | None) -> dict:
+	"""Intro paragraph + example NL questions for the Explorer page.
+
+	Grounded in this specific dataset's real columns/values when possible
+	(via Groq — see `nl_search.generate_dataset_context`), each generated
+	question verified to actually produce a chart on this dataset before
+	being shown (`chart_builder.verify_example_questions`) — never trusts
+	the model's own guess at which chart type would result. Falls back to
+	`_STATIC_DATASET_CONTEXT` at any point that doesn't hold up.
+
+	Cached by `db_path` — called once right after a live scrape finishes
+	writing (see `page_scraper`), so the cache is already warm by the time
+	a visitor opens Explorer; a call from `page_explorer()` itself is then
+	just a cache hit.
+
+	:param db_path: The dataset's SQLite file.
+	:type db_path: Path
+	:param keywords: The search keywords this dataset was scraped for, or
+		`None` for the shared demo dataset (always static, see above).
+	:type keywords: str | None
+	:return: `{"intro": str, "examples": [{"question": str, "chart_type": str}, ...]}`.
+	:rtype: dict
+	"""
+	if keywords is None:
+		return _STATIC_DATASET_CONTEXT
+	df = load_products_with_suppliers(db_path)
+	if df.empty:
+		return _STATIC_DATASET_CONTEXT
+	context = generate_dataset_context(df, keywords)
+	if context is None:
+		return _STATIC_DATASET_CONTEXT
+	examples = verify_example_questions(df, context["questions"])
+	if examples is None:
+		return _STATIC_DATASET_CONTEXT
+	return {"intro": context["intro"], "examples": examples}
+
+
 def page_explorer() -> None:
 	"""Dataset picker + natural-language search + charts."""
 	st.title("Explore")
@@ -289,18 +372,15 @@ def page_explorer() -> None:
 		list(dataset_labels.keys()),
 		help="Each search has its own database — choose which one to explore.",
 	)
-	df = load_products_with_suppliers(dataset_labels[selected_label])
+	selected_path = dataset_labels[selected_label]
+	df = load_products_with_suppliers(selected_path)
 
 	if df.empty:
 		st.info("This dataset is empty.")
 		return
 
-	# Used to make the example questions below reflect what's actually in
-	# this dataset instead of a hardcoded country that might not appear in
-	# it at all (e.g. a "wireless earbuds" scrape with no Chinese supplier).
-	present_countries = df["country_name"].dropna()
-	example_country = (
-		present_countries.value_counts().index[0] if not present_countries.empty else "China"
+	context = _get_dataset_context(
+		selected_path, None if selected_path == demo_db else dataset_label(selected_path)
 	)
 
 	st.download_button(
@@ -314,14 +394,7 @@ def page_explorer() -> None:
 	tab_search, tab_charts = st.tabs(["💬 Natural-language search", "📊 Charts"])
 
 	with tab_search:
-		st.info(
-			"🧑‍💼 **Put yourself in the shoes of an entrepreneur who wants to source a "
-			"product on Alibaba.** You have hundreds of suppliers in front of you, all with "
-			"different prices, ratings, and guarantees — you want to find the best "
-			"suppliers, at the best price, without spending hours comparing rows by hand. "
-			"That's exactly what this search does: ask your question in plain language, "
-			"it filters/sorts the data for you."
-		)
+		st.info(f"🧑‍💼 {context['intro']}")
 
 		with st.expander("📋 Available fields in the data"):
 			col_product, col_supplier = st.columns(2)
@@ -362,19 +435,14 @@ def page_explorer() -> None:
 
 		st.markdown(
 			"**Example questions to ask** — the chart in parentheses is the one "
-			"\"Auto\" actually picks for this phrasing (verified, not just indicative):"
+			"\"Auto\" picks for this phrasing, verified against this dataset:"
 		)
 		st.markdown(
-			f"""
-			- *Which 5 suppliers have the best supplier_service_score?* (Bar)
-			- *What is the distribution of minimum prices?* (Histogram)
-			- *What is the spread of product_score by supplier country?* (Box plot)
-			- *Is there a correlation between product_score and min_price?* (Scatter)
-			- *Compare the average product price by supplier country.* (Bar)
-			- *What is the distribution of MOQ (minimum order quantity)?* (Histogram)
-			- *Which countries are represented among the suppliers?* (World map)
-			- *List suppliers in {example_country} with at least 5 years as a Gold Supplier, sorted by minimum price.* (Table — pick "Table only" from the menu, "Auto" doesn't detect this case and will show a bar chart by default)
-			"""
+			"\n".join(
+				f"- *{ex['question']}* "
+				f"({_CHART_TYPE_LABELS.get(ex['chart_type'], ex['chart_type'])})"
+				for ex in context["examples"]
+			)
 		)
 
 		query = st.text_input(
@@ -629,6 +697,12 @@ def page_scraper() -> None:
 			raw_products,
 			db_name=f"sessions/{session_id}/db/{DB_PREFIX}_{slug}",
 			report_path=f"sessions/{session_id}/data_quality_report.json",
+		)
+		# Warms _get_dataset_context's cache now (one Groq call, right after
+		# the data that grounds it exists) instead of on the visitor's first
+		# Explorer view — see its docstring.
+		_get_dataset_context(
+			Path(f"sessions/{session_id}/db/{DB_PREFIX}_{slug}.sqlite"), keywords
 		)
 
 	st.divider()

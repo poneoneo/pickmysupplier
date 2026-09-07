@@ -18,6 +18,7 @@ import json
 
 import pandas as pd
 from groq import Groq
+from loguru import logger
 
 from . import GROQ_API_KEY
 
@@ -132,6 +133,94 @@ def build_query_spec(question: str, df: pd.DataFrame) -> dict:
 		return json.loads(content)
 	except (json.JSONDecodeError, TypeError) as e:
 		raise RuntimeError(f"Unusable response from the model: {e}") from e
+
+
+_DATASET_CONTEXT_SYSTEM_PROMPT = """\
+You write onboarding copy for a B2B sourcing data-exploration tool, for a \
+specific batch of scraped supplier/product data. Output ONLY a JSON object \
+with this exact shape:
+
+{{"intro": "<2-4 sentence paragraph>", "questions": ["<question 1>", ...]}}
+
+"intro" — written in the same voice as this reference (match its tone, \
+length, and structure, but ground it in the actual product category below \
+instead of speaking generically about "a product"):
+"Put yourself in the shoes of an entrepreneur who wants to source a \
+product on Alibaba. You have hundreds of suppliers in front of you, all \
+with different prices, ratings, and guarantees — you want to find the \
+best suppliers, at the best price, without spending hours comparing rows \
+by hand. That's exactly what this search does: ask your question in \
+plain language, it filters/sorts the data for you."
+
+"questions" — exactly 10 natural-language questions a real buyer sourcing \
+this exact product would ask this tool. Each question MUST explicitly \
+name at least one column from the list below, using its exact name (e.g. \
+"supplier_service_score"). Spread the 10 questions across different kinds \
+of framing so a variety of chart types would naturally come out of them: \
+some about a "top N"/ranking, some about the "distribution"/spread of one \
+column, some comparing an average across categories, at least one asking \
+about a correlation/relationship between two numeric columns ("X vs Y" or \
+"relationship between X and Y"), and one about which countries/geography \
+are represented. Never invent a column name.
+
+Available columns (name: dtype):
+{schema}
+
+{hints}
+
+Product category being sourced: {keywords}"""
+
+
+def generate_dataset_context(df: pd.DataFrame, keywords: str) -> dict | None:
+	"""Ask Groq for an intro paragraph + example questions grounded in this dataset.
+
+	Best-effort: returns `None` on any failure (missing API key, network
+	error, unusable JSON) rather than raising, so the caller can fall back
+	to static content. This function only asks the model to ground
+	questions in real column names — it doesn't verify a question actually
+	produces a chart on this specific data; see
+	`chart_builder.verify_example_questions` for that (deliberately kept
+	separate: this module stays chart-agnostic).
+
+	:param df: The dataset the intro/questions should be grounded in.
+	:type df: pd.DataFrame
+	:param keywords: The product category this dataset was scraped for
+		(the search keywords), used to make the intro concrete instead of
+		generic.
+	:type keywords: str
+	:return: `{"intro": str, "questions": list[str]}`, or `None` on failure.
+	:rtype: dict | None
+	"""
+	if not GROQ_API_KEY:
+		return None
+	schema = "\n".join(f"- {col}: {dtype}" for col, dtype in df.dtypes.items())
+	system_prompt = _DATASET_CONTEXT_SYSTEM_PROMPT.format(
+		schema=schema, hints=build_value_hints(df), keywords=keywords
+	)
+	try:
+		client = Groq(api_key=GROQ_API_KEY)
+		completion = client.chat.completions.create(
+			messages=[{"role": "system", "content": system_prompt}],
+			model=GROQ_MODEL,
+			response_format={"type": "json_object"},
+			temperature=0,
+		)
+		result = json.loads(completion.choices[0].message.content)
+	except Exception:  # noqa: BLE001
+		logger.exception("Dataset context generation failed")
+		return None
+
+	if (
+		not isinstance(result, dict)
+		or not isinstance(result.get("intro"), str)
+		or not result["intro"].strip()
+		or not isinstance(result.get("questions"), list)
+	):
+		return None
+	questions = [q.strip() for q in result["questions"] if isinstance(q, str) and q.strip()]
+	if not questions:
+		return None
+	return {"intro": result["intro"].strip(), "questions": questions}
 
 
 _FILTER_OPS = {

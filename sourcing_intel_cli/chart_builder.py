@@ -704,3 +704,44 @@ def build_chart(
 		return build_map_option(df, country_col, title)
 
 	return None
+
+
+def verify_example_questions(
+	df: pd.DataFrame, candidates: list[str], min_keep: int = 4, max_keep: int = 8
+) -> list[dict] | None:
+	"""Keep only the candidate NL questions that actually produce a chart on `df`.
+
+	Each candidate is run through this module's own deterministic pipeline
+	(`suggest_chart_type` then `build_chart`) — never trusts whatever
+	generated the candidates (an LLM, see
+	`nl_search.generate_dataset_context`) to also pick a correct chart
+	type, since that model has no way to know which column combinations
+	this specific dataset actually has non-empty, plottable data for.
+
+	:param df: The dataset the questions were generated for.
+	:type df: pd.DataFrame
+	:param candidates: Candidate NL question strings.
+	:type candidates: list[str]
+	:param min_keep: If fewer than this many candidates verify, the whole
+		batch is treated as unreliable — `None` is returned so the caller
+		falls back to static content, rather than showing a suspiciously
+		short list.
+	:type min_keep: int
+	:param max_keep: Never return more than this many, even if more verify.
+	:type max_keep: int
+	:return: `[{"question": str, "chart_type": str}, ...]`, or `None` if
+		fewer than `min_keep` candidates verified.
+	:rtype: list[dict] | None
+	"""
+	verified = []
+	for question in candidates:
+		if not isinstance(question, str) or not question.strip():
+			continue
+		chart_type = suggest_chart_type(question)
+		if build_chart(df, chart_type, title=question) is not None:
+			verified.append({"question": question.strip(), "chart_type": chart_type})
+		if len(verified) >= max_keep:
+			break
+	if len(verified) < min_keep:
+		return None
+	return verified
