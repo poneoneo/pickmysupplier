@@ -7,11 +7,14 @@ Chart selection stays outside the LLM entirely: either the user picks a
 chart type explicitly, or `suggest_chart_type` maps the question's wording
 to one of a fixed set of chart types, and `build_chart` renders it from
 whatever columns the result dataframe actually has, as an ECharts `option`
-dict passed straight to `streamlit_echarts.st_echarts`.
+dict. `render_echarts_html` turns that dict into HTML for
+`st.components.v1.html` — see its own docstring and `ECHARTS_CDN_URL` for
+why this doesn't go through the `streamlit_echarts` package.
 """
 
 from __future__ import annotations
 
+import json
 import textwrap
 
 import numpy as np
@@ -19,6 +22,25 @@ import pandas as pd
 from loguru import logger
 
 CHART_TYPES = ("none", "auto", "histogram", "bar", "box", "scatter", "map")
+
+# `streamlit_echarts` (the wrapper package, pinned to 0.4.0 for a prior,
+# unrelated compatibility reason) stopped rendering any series data against
+# current Streamlit versions — reproduced with a trivial hardcoded chart with
+# no relation to this project's code, so it's a bug in that wrapper/its
+# bundled ECharts build, not fixable from here. Confirmed 0.7.0 (latest) is
+# worse (nothing renders, not even axes) without extra "asset_dir"
+# configuration this project doesn't have. `render_echarts_html` bypasses the
+# wrapper entirely: a plain `<div>` + the official ECharts UMD build (plus
+# its official "dark" theme file, previously supplied by the wrapper via
+# `st_echarts(theme="dark")`) loaded from a CDN, rendered via
+# `st.components.v1.html` (which uses Streamlit's older, still-stable
+# HTML-embedding path — unrelated to the custom-component protocol that
+# broke). Both files are version-pinned and hash-verified (Subresource
+# Integrity) so a compromised CDN can't silently swap in different JS.
+ECHARTS_CDN_URL = "https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"
+ECHARTS_CDN_SRI = "sha384-pPi0zxBAoDu6+JXW/C68UZLvBUUtU+7zonhif43rqj7pxsGyqyqzcian2Rj37Rss"
+ECHARTS_DARK_THEME_CDN_URL = "https://cdn.jsdelivr.net/npm/echarts@5.6.0/theme/dark.js"
+ECHARTS_DARK_THEME_CDN_SRI = "sha384-e5yUjHlsMcLwsXP8QBpfUofcbF3vG5oEbSiqvkTM/ShCzG7R9+HWBmQhI22nBXIq"
 
 # Matches the dark reference design's chart series colors (blue/red/pink).
 SERIES_COLORS = ["#5b8ff9", "#e8524c", "#f6a5c0"]
@@ -105,9 +127,9 @@ _FRENCH_TO_ENGLISH_COUNTRY = {
 
 
 def _sanitize_for_json(values: list) -> list:
-	"""Replace NaN with None so `st_echarts` can safely `json.dumps` the option.
+	"""Replace NaN with None so `render_echarts_html` can safely `json.dumps` the option.
 
-	`st_echarts` serializes option dicts with plain `json.dumps`, which
+	`render_echarts_html` serializes option dicts with plain `json.dumps`, which
 	emits a bare `NaN` literal that the frontend's `JSON.parse` rejects —
 	a legacy/degenerate database with null numeric fields would otherwise
 	break the chart instead of just omitting a point.
@@ -345,7 +367,7 @@ def build_bar_option(
 	# alphabetical grouping. This also drops a NaN category automatically
 	# (`groupby`'s default `dropna=True`) — a NaN category can't be
 	# sanitized into a meaningful bar label the way `_sanitize_for_json`
-	# handles NaN *values* (-> None), since `st_echarts` serializes the
+	# handles NaN *values* (-> None), since `render_echarts_html` serializes the
 	# option with plain `json.dumps`, which would otherwise emit a bare,
 	# invalid `NaN` token for the category axis data and crash ECharts'
 	# JS-side rendering pipeline.
@@ -425,10 +447,10 @@ def build_scatter_option(df: pd.DataFrame, x_col: str, y_col: str, title: str) -
 
 	The trend line (least-squares fit, `numpy.polyfit` degree 1) is computed
 	on the raw values, so it's drawn in the same coordinate space as the
-	actual points — ECharts itself has no built-in regression, and the
-	`ecStat` plugin that would add one isn't available in the pinned
-	`streamlit-echarts==0.4.0` (see requirements.txt). The line is rendered
-	as a second, symbol-less `line` series spanning just the two endpoints.
+	actual points — ECharts itself has no built-in regression, and adding
+	the separate `ecStat` plugin for one isn't worth it for a single straight
+	line. The line is rendered as a second, symbol-less `line` series
+	spanning just the two endpoints.
 
 	The *quoted* correlation statistic, however, is Spearman's rank
 	correlation (ρ) rather than Pearson's r — computed by rank-transforming
@@ -515,10 +537,10 @@ def build_map_option(df: pd.DataFrame, category_col: str, title: str) -> dict:
 	:param title: Chart title.
 	:type title: str
 	:return: An ECharts `option` dict. `series[0].map` references the
-		`"world"` map by name — the caller must also register the matching
-		GeoJSON via `streamlit_echarts.Map("world", geojson)` passed to
-		`st_echarts(..., map=...)`, or the region names in `data` have
-		nothing to resolve against and nothing renders.
+		`"world"` map by name — the caller must also pass the matching
+		GeoJSON as `map_geojson`/`map_name="world"` to `render_echarts_html`,
+		or the region names in `data` have nothing to resolve against and
+		nothing renders.
 	:rtype: dict
 	"""
 	counts = df[category_col].value_counts()
@@ -549,6 +571,78 @@ def build_map_option(df: pd.DataFrame, category_col: str, title: str) -> dict:
 	}
 
 
+def _json_for_script(value) -> str:
+	"""`json.dumps`, safe to embed directly inside an HTML `<script>` block.
+
+	`option`/`map_geojson` ultimately contain scraped, third-party text
+	(product names, certifications, country names) — a value containing a
+	literal `</script>` would otherwise close the tag early and let
+	whatever follows execute as HTML/JS in the visitor's browser (a stored
+	XSS). Escaping `<` inside `</` (the only sequence the HTML parser
+	treats specially mid-script) neutralizes that without corrupting valid
+	JSON, since `<` never needs escaping in JSON itself. `\\u2028`/`\\u2029`
+	(line/paragraph separator) are valid inside a JSON string but treated
+	as line terminators by JavaScript's tokenizer — left unescaped, either
+	one can silently truncate a statement.
+
+	:param value: Anything `json.dumps` accepts.
+	:return: JSON text safe to interpolate inside a `<script>...</script>` block.
+	:rtype: str
+	"""
+	return (
+		json.dumps(value)
+		.replace("</", "<\\/")
+		.replace(" ", "\\u2028")
+		.replace(" ", "\\u2029")
+	)
+
+
+def render_echarts_html(
+	option: dict,
+	height: str = "500px",
+	map_name: str | None = None,
+	map_geojson: dict | None = None,
+) -> str:
+	"""Render an ECharts `option` dict as a self-contained HTML snippet.
+
+	Pass the result to `st.components.v1.html(html, height=<int pixels>)` —
+	see the module docstring / `ECHARTS_CDN_URL` for why this exists instead
+	of `streamlit_echarts.st_echarts`. Each call gets its own iframe (that's
+	how `components.html` works), so a plain `id="chart"` never collides
+	between multiple charts on the same page.
+
+	:param option: An ECharts `option` dict, e.g. from `build_bar_option`.
+	:type option: dict
+	:param height: CSS height for the chart `<div>` (e.g. `"500px"`).
+	:type height: str
+	:param map_name: Name the map series in `option` refers to (e.g.
+		`"world"`) — required together with `map_geojson` for a "map" chart,
+		omitted otherwise.
+	:type map_name: str | None
+	:param map_geojson: The GeoJSON `FeatureCollection` `map_name` resolves
+		to (e.g. from `app.py::_load_world_geojson`).
+	:type map_geojson: dict | None
+	:return: A complete HTML snippet ready for `st.components.v1.html`.
+	:rtype: str
+	"""
+	register_map_js = (
+		f"echarts.registerMap({_json_for_script(map_name)}, {_json_for_script(map_geojson)});"
+		if map_name and map_geojson is not None
+		else ""
+	)
+	return f"""
+<div id="chart" style="width:100%;height:{height};"></div>
+<script src="{ECHARTS_CDN_URL}" integrity="{ECHARTS_CDN_SRI}" crossorigin="anonymous"></script>
+<script src="{ECHARTS_DARK_THEME_CDN_URL}" integrity="{ECHARTS_DARK_THEME_CDN_SRI}" crossorigin="anonymous"></script>
+<script>
+	var chart = echarts.init(document.getElementById('chart'), 'dark');
+	{register_map_js}
+	chart.setOption({_json_for_script(option)});
+	window.addEventListener('resize', function () {{ chart.resize(); }});
+</script>
+"""
+
+
 def build_chart(
 	df: pd.DataFrame, chart_type: str, title: str = "", metric_col: str | None = None
 ) -> dict | None:
@@ -565,7 +659,7 @@ def build_chart(
 	:type title: str
 	:param metric_col: Preferred numeric column for the value axis, if present.
 	:type metric_col: str | None
-	:return: An ECharts `option` dict (pass to `streamlit_echarts.st_echarts`),
+	:return: An ECharts `option` dict (pass to `render_echarts_html`),
 		or `None` if no suitable chart could be built.
 	:rtype: dict | None
 	"""

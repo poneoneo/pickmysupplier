@@ -80,10 +80,19 @@ Thème sombre (`.streamlit/config.toml`).
   dans le prompt, sinon un filtre sur `country_name` devine `"China"` alors
   que les données stockent `"chine"` (minuscule, français — voir
   `utils_scrapping.country_name`), et retourne silencieusement zéro ligne.
-- **Visualisation** : ECharts via `streamlit-echarts` (`st_echarts`), thème
-  sombre — `chart_builder.py` construit les dicts d'`option` ECharts
-  (histogramme/barres/boîte à moustaches/nuage de points) au lieu de
-  `plotly.express` (retiré)
+- **Visualisation** : ECharts, thème sombre — `chart_builder.py` construit
+  les dicts d'`option` ECharts (histogramme/barres/boîte à
+  moustaches/nuage de points/carte) au lieu de `plotly.express` (retiré).
+  `render_echarts_html()` (`chart_builder.py`) rend ces dicts en HTML brut
+  (echarts.js + son thème "dark" officiel chargés depuis un CDN, hash
+  vérifié via Subresource Integrity), affiché via
+  `st.components.v1.html()` — **pas** le package `streamlit-echarts`,
+  retiré le 2026-09-06 : son wrapper (épinglé à `0.4.0` pour une
+  incompatibilité antérieure, non liée) ne rendait plus aucune série de
+  données contre les versions récentes de Streamlit — reproduit avec un
+  graphique minimal sans rapport avec le code du projet, donc bug de la
+  librairie elle-même, pas du code. La 0.7.0 (dernière version) est pire
+  (rien ne s'affiche du tout). Voir Historique des décisions.
 - **Logs** : `loguru` ; **affichage terminal legacy** : `rich` (encore
   utilisé dans `proxies_providers.py` pour les messages de progression)
 
@@ -98,7 +107,8 @@ sourcing_intel_cli_project/
     ├── nl_search.py                    # build_query_spec() (Groq, JSON mode) + apply_query_spec()
     │                                     (exécution pandas déterministe) + build_value_hints()
     ├── chart_builder.py                  # suggest_chart_type() + build_chart() : sélection de
-    │                                       graphique déterministe pour les résultats de recherche NL
+    │                                       graphique déterministe pour les résultats de recherche NL ;
+    │                                       render_echarts_html() : rendu HTML brut (pas de wrapper)
     ├── product_naming.py                  # summarize_product_names() (Groq, repli déterministe
     │                                        truncate_at_word_boundary) : noms de produits raccourcis
     ├── models.py                     # SQLModel: Product, Supplier
@@ -250,18 +260,23 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
   etc.) n'a toujours pas été testé en conditions réelles au-delà de ce qui
   est documenté ici. **Considère tout le reste comme non validé jusqu'à
   preuve du contraire.**
-- **Rendu des graphiques ECharts non vérifiable dans le navigateur
-  automatisé utilisé pour les tests (2026-09-06)** : les composants
-  `streamlit_echarts.st_echarts` (les 3 historiques ET les 3 ajoutés dans
-  ce commit) restent à hauteur d'iframe 0 dans cet environnement, avec une
-  erreur JS interne à ECharts (`TypeError: Cannot read properties of
-  undefined (reading 'get')` dans `getPipeline`/`setData`) — reproduit à
-  l'identique sur les 3 graphiques déjà en prod avant tout changement,
-  donc pas une régression liée au code de l'app, plutôt un problème
-  d'environnement du bac à sable (version Chrome/CDP). Si ce problème
-  réapparaît en conditions réelles (vrai navigateur, vrai utilisateur),
-  ne pas le supposer résolu sur la seule base de ce commit — personne n'a
-  encore confirmé le rendu réel en dehors du bac à sable.
+- **Graphiques ECharts qui ne s'affichaient plus, résolu le 2026-09-06** :
+  signalé par l'utilisateur en conditions réelles (pas juste le bac à
+  sable de test — vérifié à l'identique dans les deux). Cause confirmée :
+  le package `streamlit-echarts` (épinglé à `0.4.0`) ne rendait plus
+  aucune série de données contre le Streamlit installé (`1.61.1`) —
+  reproduit avec un graphique minimal hardcodé, sans rapport avec le code
+  du projet (axes affichés, séries jamais dessinées), donc bug de la
+  librairie/son bundle ECharts embarqué, pas du code de l'app. Deux pistes
+  écartées avant la solution retenue : `key=` explicite sur chaque
+  `st_echarts` (aucun effet), mise à jour vers `streamlit-echarts==0.7.0`
+  (pire — plus rien ne s'affiche du tout, confirme la note déjà présente
+  dans `requirements.txt` sur l'API "components v2"/`asset_dir` manquante).
+  Solution : `chart_builder.render_echarts_html()` contourne le wrapper
+  entièrement (HTML brut + echarts.js officiel + son thème "dark" officiel,
+  chargés depuis un CDN avec hash Subresource Integrity), affiché via
+  `st.components.v1.html()` — dépendance `streamlit-echarts` retirée de
+  `requirements.txt`.
 
 ## Historique des décisions (pour éviter de revenir en arrière par erreur)
 
