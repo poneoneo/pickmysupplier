@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from loguru import logger
 from sqlmodel import SQLModel
-from streamlit_echarts import Map, st_echarts
 
 from sourcing_intel_cli.chart_builder import (
 	build_bar_option,
@@ -26,6 +26,7 @@ from sourcing_intel_cli.chart_builder import (
 	build_histogram_option,
 	build_map_option,
 	build_scatter_option,
+	render_echarts_html,
 	suggest_chart_type,
 )
 from sourcing_intel_cli.data_quality import (
@@ -436,7 +437,7 @@ def page_explorer() -> None:
 			# filter/column/sort that doesn't match a real column rather
 			# than raising, so `result` ends up as the full, unfiltered
 			# dataset instead of empty. Left unchecked, that used to reach
-			# build_chart/st_echarts with no clear signal to the user that
+			# build_chart/render_echarts_html with no clear signal to the user that
 			# their question wasn't understood — flagging it here instead.
 			spec_is_empty = (
 				not spec.get("filters")
@@ -459,12 +460,18 @@ def page_explorer() -> None:
 					else None
 				)
 				if option is not None:
-					# The map's GeoJSON is registered separately from the
-					# option dict — st_echarts(map=...) is how ECharts
-					# learns what "world" (referenced in
+					# The map's GeoJSON is passed separately from the option
+					# dict — render_echarts_html's map_name/map_geojson is how
+					# ECharts learns what "world" (referenced in
 					# option["series"][0]["map"]) actually resolves to.
-					map_arg = Map("world", _load_world_geojson()) if resolved_type == "map" else None
-					st_echarts(options=option, theme="dark", height="500px", map=map_arg)
+					map_kwargs = (
+						{"map_name": "world", "map_geojson": _load_world_geojson()}
+						if resolved_type == "map"
+						else {}
+					)
+					components.html(
+						render_echarts_html(option, height="500px", **map_kwargs), height=500
+					)
 					with st.expander("View chart data"):
 						st.dataframe(result, use_container_width=True)
 				else:
@@ -483,7 +490,7 @@ def page_explorer() -> None:
 		col1, col2 = st.columns(2)
 		with col1:
 			option_price = build_histogram_option(df, "min_price", "Distribution of minimum prices")
-			st_echarts(options=option_price, theme="dark", height="500px")
+			components.html(render_echarts_html(option_price, height="500px"), height=500)
 		with col2:
 			top_suppliers = (
 				df.groupby("supplier_name")["supplier_service_score"]
@@ -499,19 +506,19 @@ def page_explorer() -> None:
 				"Top 10 suppliers by service score",
 				horizontal=True,
 			)
-			st_echarts(options=option_suppliers, theme="dark", height="500px")
+			components.html(render_echarts_html(option_suppliers, height="500px"), height=500)
 
 		option_country = build_box_option(
 			df, "country_name", "min_price", "Price distribution by supplier country"
 		)
-		st_echarts(options=option_country, theme="dark", height="500px")
+		components.html(render_echarts_html(option_country, height="500px"), height=500)
 
 		col3, col4 = st.columns(2)
 		with col3:
 			option_reliability = build_scatter_option(
 				df, "review_count", "review_score", "Review score vs. number of reviews"
 			)
-			st_echarts(options=option_reliability, theme="dark", height="500px")
+			components.html(render_echarts_html(option_reliability, height="500px"), height=500)
 		with col4:
 			trade_coverage = (
 				df.groupby("country_name")["trade_product"]
@@ -528,18 +535,18 @@ def page_explorer() -> None:
 				"Trade Assurance coverage by country (%)",
 				horizontal=True,
 			)
-			st_echarts(options=option_trade, theme="dark", height="500px")
+			components.html(render_echarts_html(option_trade, height="500px"), height=500)
 
 		# One row per supplier, not per product — value_counts() in
 		# build_map_option would otherwise count a supplier once per product
 		# they list, inflating countries with a few prolific suppliers.
 		supplier_counts = df.drop_duplicates("supplier_name")
 		option_map = build_map_option(supplier_counts, "country_name", "Suppliers by country")
-		st_echarts(
-			options=option_map,
-			theme="dark",
-			height="500px",
-			map=Map("world", _load_world_geojson()),
+		components.html(
+			render_echarts_html(
+				option_map, height="500px", map_name="world", map_geojson=_load_world_geojson()
+			),
+			height=500,
 		)
 
 
