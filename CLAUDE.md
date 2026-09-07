@@ -80,10 +80,6 @@ Thème sombre (`.streamlit/config.toml`).
   dans le prompt, sinon un filtre sur `country_name` devine `"China"` alors
   que les données stockent `"chine"` (minuscule, français — voir
   `utils_scrapping.country_name`), et retourne silencieusement zéro ligne.
-  `generate_dataset_context()` (même fichier) réutilise ce même principe
-  pour générer l'intro + les exemples de questions de la page Explorer,
-  adaptés au dataset de chaque scrape — voir Historique des décisions
-  (2026-09-06) pour le détail (vérification déterministe, cache, repli).
 - **Visualisation** : ECharts, thème sombre — `chart_builder.py` construit
   les dicts d'`option` ECharts (histogramme/barres/boîte à
   moustaches/nuage de points/carte) au lieu de `plotly.express` (retiré).
@@ -334,26 +330,6 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
   code (filet de sécurité pour les tests locaux de l'auteur), mais ne doit
   **jamais** être configuré dans `st.secrets` sur l'hébergement public —
   sinon on recrée exactement le problème qu'on vient de corriger.
-- **Intro + questions NL adaptées au dataset, le 2026-09-06** —
-  `nl_search.generate_dataset_context(df, keywords)` demande à Groq (JSON
-  mode) un paragraphe d'intro et ~10 questions candidates ancrées dans les
-  vraies colonnes/valeurs du dataset scrapé (jamais une colonne inventée).
-  Le LLM ne choisit **jamais** le type de graphique associé : chaque
-  question candidate est repassée dans le pipeline déterministe existant
-  (`chart_builder.suggest_chart_type` puis `build_chart`), et seules celles
-  qui produisent réellement un graphique non vide sur ce dataset précis
-  sont gardées (`verify_example_questions`, `min_keep=4` sinon repli
-  complet sur `app.py::_STATIC_DATASET_CONTEXT`). Généré une seule fois par
-  scrape live (juste après l'écriture en base, dans `page_scraper`), mis en
-  cache par `db_path` via `@st.cache_data` (`_get_dataset_context`) — la
-  page Explorer ne fait qu'un hit de cache. Le jeu de démo reste
-  volontairement statique (`keywords=None` court-circuite l'appel Groq) :
-  il est identique pour tout le monde, l'adapter par visiteur n'a pas de
-  sens. Limite connue : `suggest_chart_type` reste un classifieur par
-  mots-clés (ex. " vs " → toujours "scatter", même pour une comparaison de
-  catégories) — une question candidate peut donc "vérifier" avec un type de
-  graphique qui ne correspond pas exactement à son intention sémantique,
-  seulement garanti non vide/non cassé.
 
 ## Prochaines étapes possibles (non commencées)
 
