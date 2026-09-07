@@ -286,6 +286,14 @@ def page_explorer() -> None:
 		st.info("This dataset is empty.")
 		return
 
+	# Used to make the example questions below reflect what's actually in
+	# this dataset instead of a hardcoded country that might not appear in
+	# it at all (e.g. a "wireless earbuds" scrape with no Chinese supplier).
+	present_countries = df["country_name"].dropna()
+	example_country = (
+		present_countries.value_counts().index[0] if not present_countries.empty else "China"
+	)
+
 	st.download_button(
 		"⬇️ Download this dataset (CSV)",
 		data=df.to_csv(index=False).encode("utf-8"),
@@ -319,6 +327,11 @@ def page_explorer() -> None:
 					- `product_score` — product rating (out of 5)
 					- `review_count` / `review_score` — number of reviews and average rating
 					- `trade_product` — covered by Trade Assurance (true/false)
+					- `alibaba_guranteed` — covered by the marketplace's own guarantee (true/false)
+					- `certifications` — certifications the product holds
+					- `ordered_or_sold` — units already ordered/sold
+					- `shipping_time_score` — shipping speed rating
+					- `is_full_promotion` / `is_customizable` / `is_instant_order` — true/false flags
 					"""
 				)
 			with col_supplier:
@@ -330,6 +343,7 @@ def page_explorer() -> None:
 					- `sopi_level` — performance level (1 to 5)
 					- `years_as_gold_supplier` — years as a Gold Supplier
 					- `supplier_service_score` — service rating (out of 5)
+					- `verification_mode` — how the supplier was verified
 					"""
 				)
 			st.caption(
@@ -342,7 +356,7 @@ def page_explorer() -> None:
 			"\"Auto\" actually picks for this phrasing (verified, not just indicative):"
 		)
 		st.markdown(
-			"""
+			f"""
 			- *Which 5 suppliers have the best supplier_service_score?* (Bar)
 			- *What is the distribution of minimum prices?* (Histogram)
 			- *What is the spread of product_score by supplier country?* (Box plot)
@@ -350,7 +364,7 @@ def page_explorer() -> None:
 			- *Compare the average product price by supplier country.* (Bar)
 			- *What is the distribution of MOQ (minimum order quantity)?* (Histogram)
 			- *Which countries are represented among the suppliers?* (World map)
-			- *List suppliers in China with at least 5 years as a Gold Supplier, sorted by minimum price.* (Table — pick "Table only" from the menu, "Auto" doesn't detect this case and will show a bar chart by default)
+			- *List suppliers in {example_country} with at least 5 years as a Gold Supplier, sorted by minimum price.* (Table — pick "Table only" from the menu, "Auto" doesn't detect this case and will show a bar chart by default)
 			"""
 		)
 
@@ -567,6 +581,11 @@ def page_scraper() -> None:
 					page_results=int(page_results),
 					api_key=user_scrapingbee_key or None,
 				)
+				# A prior failed attempt (this session) may have latched
+				# sb_quota_exhausted on — clear it now that a scrape with
+				# this key actually went through, so the warning banner
+				# doesn't keep showing on every page after the key is fixed.
+				st.session_state["sb_quota_exhausted"] = False
 			except ScrapingBeeKeyError as e:
 				logger.warning(f"ScrapingBee key problem: {e}")
 				st.session_state["sb_quota_exhausted"] = True
