@@ -571,6 +571,32 @@ def build_map_option(df: pd.DataFrame, category_col: str, title: str) -> dict:
 	}
 
 
+def _json_for_script(value) -> str:
+	"""`json.dumps`, safe to embed directly inside an HTML `<script>` block.
+
+	`option`/`map_geojson` ultimately contain scraped, third-party text
+	(product names, certifications, country names) — a value containing a
+	literal `</script>` would otherwise close the tag early and let
+	whatever follows execute as HTML/JS in the visitor's browser (a stored
+	XSS). Escaping `<` inside `</` (the only sequence the HTML parser
+	treats specially mid-script) neutralizes that without corrupting valid
+	JSON, since `<` never needs escaping in JSON itself. `\\u2028`/`\\u2029`
+	(line/paragraph separator) are valid inside a JSON string but treated
+	as line terminators by JavaScript's tokenizer — left unescaped, either
+	one can silently truncate a statement.
+
+	:param value: Anything `json.dumps` accepts.
+	:return: JSON text safe to interpolate inside a `<script>...</script>` block.
+	:rtype: str
+	"""
+	return (
+		json.dumps(value)
+		.replace("</", "<\\/")
+		.replace(" ", "\\u2028")
+		.replace(" ", "\\u2029")
+	)
+
+
 def render_echarts_html(
 	option: dict,
 	height: str = "500px",
@@ -600,7 +626,7 @@ def render_echarts_html(
 	:rtype: str
 	"""
 	register_map_js = (
-		f"echarts.registerMap({json.dumps(map_name)}, {json.dumps(map_geojson)});"
+		f"echarts.registerMap({_json_for_script(map_name)}, {_json_for_script(map_geojson)});"
 		if map_name and map_geojson is not None
 		else ""
 	)
@@ -611,7 +637,7 @@ def render_echarts_html(
 <script>
 	var chart = echarts.init(document.getElementById('chart'), 'dark');
 	{register_map_js}
-	chart.setOption({json.dumps(option)});
+	chart.setOption({_json_for_script(option)});
 	window.addEventListener('resize', function () {{ chart.resize(); }});
 </script>
 """
