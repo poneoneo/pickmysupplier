@@ -77,6 +77,7 @@ def _get_session_id() -> str:
 # ---------------------------------------------------------------------------
 
 
+@st.cache_data
 def load_products_with_suppliers(db_path: Path) -> pd.DataFrame:
 	"""Read products joined with suppliers from the given SQLite DB.
 
@@ -84,6 +85,13 @@ def load_products_with_suppliers(db_path: Path) -> pd.DataFrame:
 	backs both the charts and the natural-language search — the same
 	structural guarantee the old CSV-only ai-agent had (no direct DB access
 	from a natural-language query), just without the extra CSV export step.
+
+	Cached by `db_path` — `page_explorer()` calls this on every rerun
+	(every widget interaction on the page, not just on dataset switch), so
+	without caching a single search's whole table gets re-read from disk on
+	every keystroke in the NL search box. `_validate_and_insert` calls
+	`st.cache_data.clear()` after every write, so a re-scrape of the same
+	keywords (same `db_path`) can't serve stale cached rows.
 
 	:param db_path: Path to the database file to read from — one per search,
 		see `discover_databases`.
