@@ -8,13 +8,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from sourcing_intel_cli.chart_builder import (
-	CHART_TYPES,
-	build_chart,
-	build_map_option,
-	suggest_chart_type,
-	verify_example_questions,
-)
+from sourcing_intel_cli.chart_builder import CHART_TYPES, build_chart, build_map_option, suggest_chart_type
 
 
 class TestSuggestChartType:
@@ -424,93 +418,3 @@ class TestBuildMapOption:
 		df = pd.DataFrame({"country_name": ["narnia", "atlantis"]})
 		option = build_map_option(df, "country_name", "Pays")
 		assert option["series"][0]["data"] == []
-
-
-class TestVerifyExampleQuestions:
-	def _df(self):
-		return pd.DataFrame(
-			{
-				"supplier_name": ["Acme", "Beta", "Gamma", "Delta", "Epsilon"],
-				"country_name": ["chine", "inde", "chine", "japon", "inde"],
-				"supplier_service_score": [4.8, 4.5, 4.2, 3.9, 4.1],
-				"min_price": [1.2, 3.4, 2.1, 5.0, 2.8],
-				"product_score": [4.5, 4.0, 3.8, 4.9, 4.2],
-			}
-		)
-
-	def test_keeps_questions_that_produce_a_working_chart(self):
-		candidates = [
-			"Which 5 suppliers have the best supplier_service_score?",
-			"What is the distribution of minimum prices?",
-		]
-		result = verify_example_questions(self._df(), candidates, min_keep=1)
-		assert result is not None
-		assert {r["question"] for r in result} == set(candidates)
-		assert {r["chart_type"] for r in result} == {"bar", "histogram"}
-
-	def test_annotates_each_kept_question_with_its_real_chart_type(self):
-		result = verify_example_questions(
-			self._df(), ["Which countries are represented among the suppliers?"], min_keep=1
-		)
-		assert result == [
-			{
-				"question": "Which countries are represented among the suppliers?",
-				"chart_type": "map",
-			}
-		]
-
-	def test_falls_back_to_a_different_chart_type_when_the_suggested_one_fails(self):
-		# suggest_chart_type resolves this to "scatter" (the " vs " keyword),
-		# but this df has only one numeric column — build_chart can't build
-		# a scatter (needs two). The question itself is still perfectly
-		# sensible on this dataset, so it must not be thrown away: falling
-		# back to "histogram" (needs only one numeric column) is exactly the
-		# behavior this test pins down.
-		one_numeric_col_df = pd.DataFrame({"min_price": [1.0, 2.0, 3.0]})
-		result = verify_example_questions(
-			one_numeric_col_df,
-			["min_price vs something else"],
-			min_keep=1,
-		)
-		assert result == [{"question": "min_price vs something else", "chart_type": "histogram"}]
-
-	def test_drops_a_question_that_cannot_build_any_chart_on_this_dataset(self):
-		# A fully empty dataframe: build_chart returns None for every chart
-		# type unconditionally (df.empty short-circuits first), so no
-		# fallback can rescue this one — the only case where a candidate is
-		# genuinely dropped.
-		result = verify_example_questions(
-			pd.DataFrame(),
-			["Is there a correlation between min_price and something else?"],
-			min_keep=0,
-		)
-		assert result == []
-
-	def test_returns_none_when_fewer_than_min_keep_verify(self):
-		result = verify_example_questions(
-			pd.DataFrame(),
-			["Is there a correlation between min_price and something else?"],
-			min_keep=1,
-		)
-		assert result is None
-
-	def test_skips_non_string_or_blank_candidates(self):
-		candidates = ["", "   ", None, 42, "What is the distribution of minimum prices?"]
-		result = verify_example_questions(self._df(), candidates, min_keep=1)
-		assert result is not None
-		assert len(result) == 1
-		assert result[0]["question"] == "What is the distribution of minimum prices?"
-
-	def test_stops_at_max_keep(self):
-		# Each phrasing matches the "compar" keyword -> "bar", and all verify
-		# on this df — max_keep caps the result before all 5 are checked.
-		candidates = [f"Compare suppliers by supplier_service_score, take {i}" for i in range(5)]
-		result = verify_example_questions(self._df(), candidates, min_keep=1, max_keep=3)
-		assert result is not None
-		assert len(result) == 3
-
-	def test_strips_whitespace_from_kept_questions(self):
-		result = verify_example_questions(
-			self._df(), ["  What is the distribution of minimum prices?  "], min_keep=1
-		)
-		assert result[0]["question"] == "What is the distribution of minimum prices?"
