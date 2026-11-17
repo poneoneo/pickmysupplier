@@ -3,7 +3,6 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence, Union
-from selectolax.parser import Node
 
 import rich
 from loguru import logger
@@ -11,7 +10,7 @@ from rich.progress import (
 	Progress,
 	SpinnerColumn,
 )
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser, LexborNode
 
 from sourcing_intel_cli.typed_datas import ProductDict, SupplierDict
 
@@ -86,7 +85,7 @@ class PageParser:
 		logger.info(f"Retrieving  div tags with class='{selector}' ...")
 		divs_and_dict = [
 			(
-				HTMLParser(self._retrieve_html_content_as_string(html_file)).css(selector),
+				LexborHTMLParser(self._retrieve_html_content_as_string(html_file)).css(selector),
 				json_hunter(
 					self._retrieve_html_content_as_string(html_file),
 					css_selector="div[id='root']",
@@ -103,7 +102,7 @@ class PageParser:
 			new_divs_and_dict.append((item[0], json.loads(item[1])))  # type: ignore
 		return new_divs_and_dict
 
-	def _suppliers_appender(self, offers_list: Sequence[dict], suppliers: list, divs: list[Node]):
+	def _suppliers_appender(self, offers_list: Sequence[dict], suppliers: list, divs: list[LexborNode]):
 		"""Parse each offer into a supplier dict, skipping any offer that fails to parse.
 
 		A single malformed offer (unexpected field format, missing key) used to

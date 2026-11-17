@@ -6,6 +6,6 @@ sqlalchemy>=2.0
 rich>=13.0
 loguru>=0.7
 playwright>=1.40
-selectolax>=0.3
+selectolax>=1.0,<2.0
 python-dotenv>=1.0
 groq>=1.0

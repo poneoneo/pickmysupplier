@@ -1,8 +1,8 @@
 import re
 from pathlib import Path
 
-import selectolax
 from loguru import logger
+from selectolax.lexbor import LexborHTMLParser
 
 # Alibaba hydrates the results page incrementally: `window.__page__data_sse<N>`
 # starts as `{}` then gets its sub-keys assigned one `<script>` tag at a time.
@@ -61,7 +61,7 @@ def _create_folder(folder_name: str):
 	return Path(folder_name)
 
 
-def scripts_hunter(css_selector: str, parser_instance: selectolax.parser.HTMLParser):
+def scripts_hunter(css_selector: str, parser_instance: LexborHTMLParser):
 	"""Find the `<script>` tag assigning `window.__page__data_sse<N>._offer_list`
 	and return its JSON payload as a string.
 
@@ -102,7 +102,7 @@ def json_hunter(html_content: str | bytes, css_selector: str = ""):
 	:return: The JSON payload as a string, or `""`/`None` if nothing was found.
 	:rtype: str | None
 	"""
-	body_parser = selectolax.parser.HTMLParser(html_content)
+	body_parser = LexborHTMLParser(html_content)
 	json_result = scripts_hunter(css_selector, body_parser)
 	if not json_result:
 		json_result = scripts_hunter("", body_parser)

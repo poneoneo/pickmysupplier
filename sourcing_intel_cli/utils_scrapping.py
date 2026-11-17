@@ -5,7 +5,7 @@ import unicodedata
 from typing import Literal
 
 from loguru import logger
-from selectolax.parser import HTMLParser, Node
+from selectolax.lexbor import LexborHTMLParser, LexborNode
 
 
 def safe_float(value, default: float = 0.0) -> float:
@@ -131,7 +131,7 @@ def clean_product_title(raw_title: str) -> str:
 	:return: The plain-text title.
 	:rtype: str
 	"""
-	return HTMLParser(raw_title).text().strip()
+	return LexborHTMLParser(raw_title).text().strip()
 
 
 @logger.catch(TypeError)
@@ -209,12 +209,12 @@ def is_trade_product(str_status: str):
 
 
 @logger.catch(TypeError)
-def suppliers_status(tags: list[Node], offer: dict):
+def suppliers_status(tags: list[LexborNode], offer: dict):
 	"""
 	Return the verification status of the supplier (unverified, verified, etc.).
 
 	:param tags: List of product card Node objects to search for the matching supplier.
-	:type tags: list[Node]
+	:type tags: list[LexborNode]
 	:param offer: Dictionary containing the information of the supplier to be searched.
 	:type offer: dict
 	:return: The verification status of the supplier.
@@ -239,12 +239,12 @@ def suppliers_status(tags: list[Node], offer: dict):
 
 
 @logger.catch(TypeError)
-def sopi_level(tag: Node):
+def sopi_level(tag: LexborNode):
 	"""
 	Return the level of the supplier (from 1 to 5) using the .search-cards-e-star class.
 
 	:param tag: Node object containing the information of the supplier.
-	:type tag: Node
+	:type tag: LexborNode
 	:return: The level of the supplier (from 1 to 5).
 	:rtype: int
 	"""
@@ -253,12 +253,12 @@ def sopi_level(tag: Node):
 
 
 @logger.catch(TypeError)
-def years_as_supplier_gold(tag: Node):
+def years_as_supplier_gold(tag: LexborNode):
 	"""
 	Return the number of years the supplier has been a gold supplier.
 
 	:param tag: Node object containing the information of the supplier.
-	:type tag: Node
+	:type tag: LexborNode
 	:return: The number of years the supplier has been a gold supplier.
 	:rtype: int
 	"""
@@ -267,14 +267,14 @@ def years_as_supplier_gold(tag: Node):
 	return year
 
 
-def _get_minimum_to_order_tag(tags: list[Node]):
+def _get_minimum_to_order_tag(tags: list[LexborNode]):
 	"""
 	Return the tag containing the minimum quantity to order.
 
 	:param tags: List of Node objects containing the information of the supplier.
-	:type tags: list[Node]
+	:type tags: list[LexborNode]
 	:return: The tag containing the minimum quantity to order.
-	:rtype: Node
+	:rtype: LexborNode
 	"""
 
 	for tag in tags:
@@ -288,12 +288,12 @@ def _get_minimum_to_order_tag(tags: list[Node]):
 
 
 @logger.catch(TypeError)
-def minimum_to_order(tag: Node):
+def minimum_to_order(tag: LexborNode):
 	"""
 	Return the minimum quantity to order.
 
 	:param tag: Node object containing the information of the product.
-	:type tag: Node
+	:type tag: LexborNode
 	:return: The minimum quantity to order.
 	:rtype: int
 	"""
