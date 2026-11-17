@@ -371,7 +371,12 @@ def build_bar_option(
 	# option with plain `json.dumps`, which would otherwise emit a bare,
 	# invalid `NaN` token for the category axis data and crash ECharts'
 	# JS-side rendering pipeline.
+	row_count_before = len(df.dropna(subset=[category_col]))
 	df = df.groupby(category_col, sort=False, as_index=False)[value_col].mean()
+	# Only call it an average when rows were actually merged — with one row
+	# per category each bar is the raw value, and "(average)" would mislead
+	# just as much as the bare column name did when rows *were* merged.
+	value_axis_name = f"{value_col} (average)" if len(df) < row_count_before else value_col
 	category_data = df[category_col].tolist()
 	series = [{"type": "bar", "data": _sanitize_for_json(df[value_col].tolist())}]
 	base = {**_base_option(title), "series": series}
@@ -386,7 +391,7 @@ def build_bar_option(
 			"name": category_col,
 			"axisLabel": _FULL_CATEGORY_LABELS,
 		}
-		value_axis = {"type": "value", "name": value_col, **_CENTERED_X_AXIS_NAME}
+		value_axis = {"type": "value", "name": value_axis_name, **_CENTERED_X_AXIS_NAME}
 		return {**base, "xAxis": value_axis, "yAxis": category_axis}
 	category_axis = {
 		"type": "category",
@@ -395,7 +400,7 @@ def build_bar_option(
 		"axisLabel": _FULL_CATEGORY_LABELS,
 		**_CENTERED_X_AXIS_NAME,
 	}
-	value_axis = {"type": "value", "name": value_col, **_VERTICAL_AXIS_NAME}
+	value_axis = {"type": "value", "name": value_axis_name, **_VERTICAL_AXIS_NAME}
 	return {**base, "xAxis": category_axis, "yAxis": value_axis}
 
 

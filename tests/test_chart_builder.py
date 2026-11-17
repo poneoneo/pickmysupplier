@@ -337,6 +337,26 @@ class TestBuildChart:
 		assert option["xAxis"]["data"] == ["chine", "inde"]
 		assert option["series"][0]["data"] == [15.0, 5.0]
 
+	def test_bar_value_axis_says_average_when_categories_were_averaged(self):
+		# Found live on the hosted app: "Compare the average product price
+		# by supplier country" plotted per-country means of min_price, but
+		# the axis just read "min_price" — a visitor couldn't tell each bar
+		# was an average rather than one product's raw price.
+		df = pd.DataFrame(
+			{
+				"country_name": ["chine", "chine", "inde"],
+				"min_price": [10.0, 20.0, 5.0],
+			}
+		)
+		option = build_chart(df, "bar")
+		assert option["yAxis"]["name"] == "min_price (average)"
+
+	def test_bar_value_axis_keeps_plain_name_when_nothing_was_averaged(self):
+		# One row per category: each bar is the raw value, so calling it an
+		# "average" would be just as misleading in the other direction.
+		option = build_chart(self._df(), "bar")
+		assert option["yAxis"]["name"] == "supplier_service_score"
+
 	def test_bar_leaves_already_unique_categories_unchanged(self):
 		# Same behavior as before this fix when every category already
 		# appears exactly once (mean of one value is that value).
