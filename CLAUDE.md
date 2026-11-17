@@ -252,6 +252,11 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
 `import sourcing_intel_cli` fonctionne. `pytest` seul échoue avec
 `ModuleNotFoundError`.
 
+**Dépendances épinglées en version exacte (`==`), jamais `>=` seul** —
+`requirements.txt`/`requirements-dev.txt` (voir Historique des décisions,
+2026-11-17). Mettre à jour une dépendance est un choix explicite : changer
+le numéro, relancer `python -m pytest`, puis commit.
+
 ## Limitations connues (non résolues intentionnellement)
 
 - **Le scraping live et la recherche en langage naturel ont été validés
@@ -330,6 +335,26 @@ donc seul `python -m` ajoute le répertoire courant à `sys.path` pour que
   code (filet de sécurité pour les tests locaux de l'auteur), mais ne doit
   **jamais** être configuré dans `st.secrets` sur l'hébergement public —
   sinon on recrée exactement le problème qu'on vient de corriger.
+- **Dépendances épinglées en version exacte le 2026-11-17** — après une
+  pause de plusieurs semaines sans toucher au projet, le redémarrage du
+  site sur Streamlit Cloud a réinstallé les dépendances depuis
+  `requirements.txt` et tiré `selectolax==1.0.0` (sorti le 2026-10-03,
+  retire complètement `selectolax.parser`) : `ImportError` au démarrage
+  (`app.py` → `demo_data.py` → `utils_scrapping.py`). Fix en 2 temps (PR
+  #31 puis ce commit) : migration du code vers `selectolax.lexbor`
+  (`LexborHTMLParser`/`LexborNode`, API vérifiée équivalente — `css`,
+  `css_first`, `attrs`/`attributes`, `text()`), puis — à la demande
+  explicite de l'utilisateur, qui veut "un projet fixe qui ne mettra à
+  jour ses deps que par nécessité du projet" — remplacement de **toutes**
+  les bornes `>=` de `requirements.txt`/`requirements-dev.txt` par des
+  épinglages exacts (`==`) sur les versions alors installées et testées
+  (`pip freeze`, 198 tests + `ruff` verts). Révèle au passage que
+  `pandas` (3.0.5) et `numpy` (2.5.2) avaient déjà silencieusement sauté
+  une version majeure sans que personne ne le remarque — aucun crash
+  visible, mais exactement le même risque latent que `selectolax`.
+  Dependabot explicitement écarté (l'utilisateur ne veut pas de PR de mise
+  à jour automatique) — une mise à jour de dépendance se fait maintenant
+  à la main, numéro par numéro, dans `requirements.txt`.
 
 ## Prochaines étapes possibles (non commencées)
 

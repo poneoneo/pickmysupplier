@@ -1,11 +1,19 @@
-streamlit>=1.36
-numpy>=1.24
-pandas>=2.0
-sqlmodel>=0.0.16
-sqlalchemy>=2.0
-rich>=13.0
-loguru>=0.7
-playwright>=1.40
-selectolax>=1.0,<2.0
-python-dotenv>=1.0
-groq>=1.0
+# Versions épinglées exactement (pas de plage >=/<) : le crash selectolax
+# (version 1.0.0 a retiré selectolax.parser sans préavis, cf. CLAUDE.md
+# "Historique des décisions") a montré qu'un simple plancher laisse passer
+# n'importe quelle version future, cassante ou pas, au prochain rebuild de
+# l'environnement (Streamlit Cloud réinstalle tout depuis ce fichier à
+# chaque redémarrage). Mettre à jour une ligne est désormais un choix
+# explicite : changer le numéro ici, puis `python -m pytest` avant de
+# commit.
+streamlit==1.61.1
+numpy==2.5.2
+pandas==3.0.5
+sqlmodel==0.0.39
+sqlalchemy==2.0.52
+rich==15.0.0
+loguru==0.7.3
+playwright==1.62.0
+selectolax==1.0.2
+python-dotenv==1.2.2
+groq==1.6.0
