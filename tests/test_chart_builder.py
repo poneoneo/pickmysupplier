@@ -8,7 +8,13 @@ from __future__ import annotations
 
 import pandas as pd
 
-from sourcing_intel_cli.chart_builder import CHART_TYPES, build_chart, build_map_option, suggest_chart_type
+from sourcing_intel_cli.chart_builder import (
+	CHART_TYPES,
+	build_chart,
+	build_map_option,
+	chart_data_table,
+	suggest_chart_type,
+)
 
 
 class TestSuggestChartType:
@@ -438,3 +444,70 @@ class TestBuildMapOption:
 		df = pd.DataFrame({"country_name": ["narnia", "atlantis"]})
 		option = build_map_option(df, "country_name", "Pays")
 		assert option["series"][0]["data"] == []
+
+
+class TestChartDataTable:
+	"""`chart_data_table` returns what the chart actually plots, for the
+	"View chart data" expander — found live on the hosted app: a bar chart of
+	8 per-country averages showed the 80 raw product rows underneath instead.
+	"""
+
+	def test_averaged_bar_returns_one_row_per_category_with_mean_and_row_count(self):
+		df = pd.DataFrame(
+			{
+				"country_name": ["chine", "chine", "inde"],
+				"min_price": [10.0, 20.0, 5.0],
+			}
+		)
+		table = chart_data_table(df, "bar")
+		assert table.to_dict("records") == [
+			{"country_name": "chine", "min_price (average)": 15.0, "rows": 2},
+			{"country_name": "inde", "min_price (average)": 5.0, "rows": 1},
+		]
+
+	def test_bar_uses_the_same_metric_col_as_build_chart(self):
+		df = pd.DataFrame(
+			{
+				"country_name": ["chine", "chine"],
+				"min_price": [10.0, 20.0],
+				"review_score": [4.0, 5.0],
+			}
+		)
+		table = chart_data_table(df, "bar", metric_col="review_score")
+		assert list(table.columns) == ["country_name", "review_score (average)", "rows"]
+		assert table["review_score (average)"].tolist() == [4.5]
+
+	def test_bar_with_unique_categories_returns_none(self):
+		# Nothing was averaged: the raw rows already *are* the plotted bars.
+		df = pd.DataFrame({"supplier_name": ["Acme", "Beta"], "min_price": [1.0, 2.0]})
+		assert chart_data_table(df, "bar") is None
+
+	def test_map_returns_row_count_per_country(self):
+		df = pd.DataFrame(
+			{
+				"supplier_name": ["Acme", "Beta", "Gamma"],
+				"country_name": ["inde", "chine", "inde"],
+			}
+		)
+		table = chart_data_table(df, "map")
+		assert table.to_dict("records") == [
+			{"country_name": "inde", "rows": 2},
+			{"country_name": "chine", "rows": 1},
+		]
+
+	def test_histogram_box_and_scatter_return_none(self):
+		# These chart types plot the raw rows directly.
+		df = pd.DataFrame(
+			{
+				"country_name": ["chine", "chine", "inde"],
+				"min_price": [10.0, 20.0, 5.0],
+				"review_score": [4.0, 5.0, 3.0],
+			}
+		)
+		for chart_type in ("histogram", "box", "scatter"):
+			assert chart_data_table(df, chart_type) is None
+
+	def test_returns_none_when_no_chart_can_be_built(self):
+		df = pd.DataFrame({"min_price": [1.0, 2.0]})
+		assert chart_data_table(df, "bar") is None
+		assert chart_data_table(pd.DataFrame(), "map") is None

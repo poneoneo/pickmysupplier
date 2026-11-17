@@ -26,6 +26,7 @@ from sourcing_intel_cli.chart_builder import (
 	build_histogram_option,
 	build_map_option,
 	build_scatter_option,
+	chart_data_table,
 	render_echarts_html,
 	suggest_chart_type,
 )
@@ -473,6 +474,14 @@ def page_explorer() -> None:
 						render_echarts_html(option, height="500px", **map_kwargs), height=500
 					)
 					with st.expander("View chart data"):
+						# When the chart aggregates (bars averaged per
+						# category, map counted per country), show what is
+						# actually plotted first — the raw rows alone hid
+						# what each bar/region stands for.
+						plotted = chart_data_table(result, resolved_type, metric_col=spec.get("sort_by"))
+						if plotted is not None:
+							st.dataframe(plotted, use_container_width=True, hide_index=True)
+							st.caption(f"Underlying rows ({len(result)})")
 						st.dataframe(result, use_container_width=True)
 				else:
 					if resolved_type != "none":

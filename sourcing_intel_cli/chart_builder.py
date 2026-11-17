@@ -338,6 +338,34 @@ def build_histogram_option(df: pd.DataFrame, numeric_col: str, title: str) -> di
 	}
 
 
+def aggregate_bar_data(
+	df: pd.DataFrame, category_col: str, value_col: str
+) -> tuple[pd.DataFrame, bool]:
+	"""Average `value_col` per category — the exact data a bar chart plots.
+
+	Shared by `build_bar_option` (the bars themselves) and
+	`chart_data_table` (the "View chart data" table), so the table can never
+	drift from what the chart shows.
+
+	:param df: The dataframe to chart.
+	:type df: pd.DataFrame
+	:param category_col: Column for the category axis.
+	:type category_col: str
+	:param value_col: Column for the value axis.
+	:type value_col: str
+	:return: `(aggregated, averaged)` — `aggregated` has one row per
+		category in first-seen order, with `category_col`, the mean of
+		`value_col`, and `rows` (how many input rows each bar averages);
+		`averaged` is True when at least one category merged several rows.
+		NaN categories are dropped (`groupby`'s default `dropna=True`).
+	:rtype: tuple[pd.DataFrame, bool]
+	"""
+	aggregated = df.groupby(category_col, sort=False, as_index=False).agg(
+		**{value_col: (value_col, "mean"), "rows": (value_col, "size")}
+	)
+	return aggregated, bool((aggregated["rows"] > 1).any())
+
+
 def build_bar_option(
 	df: pd.DataFrame, category_col: str, value_col: str, title: str, horizontal: bool = False
 ) -> dict:
@@ -371,12 +399,11 @@ def build_bar_option(
 	# option with plain `json.dumps`, which would otherwise emit a bare,
 	# invalid `NaN` token for the category axis data and crash ECharts'
 	# JS-side rendering pipeline.
-	row_count_before = len(df.dropna(subset=[category_col]))
-	df = df.groupby(category_col, sort=False, as_index=False)[value_col].mean()
+	df, averaged = aggregate_bar_data(df, category_col, value_col)
 	# Only call it an average when rows were actually merged — with one row
 	# per category each bar is the raw value, and "(average)" would mislead
 	# just as much as the bare column name did when rows *were* merged.
-	value_axis_name = f"{value_col} (average)" if len(df) < row_count_before else value_col
+	value_axis_name = f"{value_col} (average)" if averaged else value_col
 	category_data = df[category_col].tolist()
 	series = [{"type": "bar", "data": _sanitize_for_json(df[value_col].tolist())}]
 	base = {**_base_option(title), "series": series}
@@ -698,14 +725,69 @@ def build_chart(
 	if chart_type == "map":
 		if not categorical_cols:
 			return None
-		# Prefer a column actually named like a country (this project's
-		# `country_name` field) over "just the first categorical column" —
-		# a product/supplier name column would never match anything in
-		# `_FRENCH_TO_ENGLISH_COUNTRY`, silently producing an empty map
-		# even when a real country column is present elsewhere in `df`.
-		country_col = next(
-			(c for c in categorical_cols if "country" in c.lower()), categorical_cols[0]
-		)
-		return build_map_option(df, country_col, title)
+		return build_map_option(df, _pick_country_col(categorical_cols), title)
+
+	return None
+
+
+def _pick_country_col(categorical_cols: list[str]) -> str:
+	"""Pick the column a map chart counts rows by.
+
+	Prefers a column actually named like a country (this project's
+	`country_name` field) over "just the first categorical column" — a
+	product/supplier name column would never match anything in
+	`_FRENCH_TO_ENGLISH_COUNTRY`, silently producing an empty map even when
+	a real country column is present elsewhere in `df`.
+
+	:param categorical_cols: Non-empty list of categorical column names.
+	:type categorical_cols: list[str]
+	:return: The chosen column name.
+	:rtype: str
+	"""
+	return next((c for c in categorical_cols if "country" in c.lower()), categorical_cols[0])
+
+
+def chart_data_table(
+	df: pd.DataFrame, chart_type: str, metric_col: str | None = None
+) -> pd.DataFrame | None:
+	"""Return the table a chart actually plots, when it differs from `df`.
+
+	For the "View chart data" expander: a bar chart that averages several
+	rows per category, or a map that counts rows per country, plots
+	something other than the raw result rows — showing only those rows
+	under the chart hid what each bar/region really stands for. Picks
+	columns exactly like `build_chart` (same `_select_columns` call), so
+	the table always matches the chart above it.
+
+	:param df: The dataframe being charted (typically the NL search result).
+	:type df: pd.DataFrame
+	:param chart_type: The resolved chart type (one of `CHART_TYPES`).
+	:type chart_type: str
+	:param metric_col: Same preferred value column passed to `build_chart`.
+	:type metric_col: str | None
+	:return: The aggregated table, or `None` when the chart plots the raw
+		rows directly (histogram, box, scatter, or a bar chart with one row
+		per category) or when no chart can be built at all.
+	:rtype: pd.DataFrame | None
+	"""
+	if df is None or df.empty:
+		return None
+	numeric_cols, categorical_cols = _select_columns(df, metric_col)
+
+	if chart_type == "bar":
+		if not categorical_cols or not numeric_cols:
+			return None
+		value_col = numeric_cols[0]
+		aggregated, averaged = aggregate_bar_data(df, categorical_cols[0], value_col)
+		if not averaged:
+			return None
+		return aggregated.rename(columns={value_col: f"{value_col} (average)"})
+
+	if chart_type == "map":
+		if not categorical_cols:
+			return None
+		country_col = _pick_country_col(categorical_cols)
+		counts = df[country_col].value_counts()
+		return pd.DataFrame({country_col: counts.index, "rows": counts.to_numpy()})
 
 	return None
