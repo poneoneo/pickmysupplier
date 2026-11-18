@@ -27,6 +27,18 @@ if not SCRAPINGBEE_API_KEY or not GROQ_API_KEY:
 	except Exception:
 		pass
 
+# Only ever set in the old Streamlit Community Cloud deployment's secrets:
+# turns that instance into a "site has moved" page pointing to the new
+# domain (see site_move.py). Never set on the VPS, where the real app runs.
+MOVED_TO_URL: str = os.environ.get("MOVED_TO_URL", "")
+if not MOVED_TO_URL:
+	try:
+		import streamlit as st
+
+		MOVED_TO_URL = st.secrets.get("MOVED_TO_URL", "")
+	except Exception:
+		pass
+
 # loguru auto-creates a default stderr handler (id 0) with diagnose=True,
 # which prints local variable values from the traceback's stack frames —
 # including a visitor's ScrapingBee API key, if it's a local variable on any

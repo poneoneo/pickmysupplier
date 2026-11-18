@@ -355,6 +355,30 @@ le numéro, relancer `python -m pytest`, puis commit.
   Dependabot explicitement écarté (l'utilisateur ne veut pas de PR de mise
   à jour automatique) — une mise à jour de dépendance se fait maintenant
   à la main, numéro par numéro, dans `requirements.txt`.
+- **Hébergement déplacé sur un VPS le 2026-11-18** (PR #34 + PR suivante) —
+  l'utilisateur voulait un site **jamais en veille ET sur son propre
+  domaine**, deux choses impossibles sur Streamlit Community Cloud gratuit.
+  Hetzner écarté (tout en rupture de stock en novembre 2026, ~21 $/mois aux
+  USA) au profit d'un **OVHcloud VPS-1** (2 vCore, 4 Go, Beauharnois QC,
+  sans engagement, ~7,30 $ CAD/mois HT), IP `158.69.193.136`, domaine
+  **pickmysupplier.com** (OVH, DNSSEC). Stack : `Dockerfile` + `deploy/`
+  (Caddy pour le HTTPS automatique et la redirection `www` → domaine nu) ;
+  la GitHub Action `deploy.yml` redéploie après chaque CI verte sur `main`,
+  via une clé SSH restreinte côté serveur (`command=` dans
+  `authorized_keys`) au seul `deploy/deploy.sh`. Secrets serveur dans
+  `/opt/pickmysupplier/deploy/.env` (`DOMAIN`, `GROQ_API_KEY`,
+  `LOGURU_LEVEL` — **jamais** `SCRAPINGBEE_API_KEY`, même règle que
+  2026-09-06). Piège trouvé en conditions réelles : l'image Ubuntu d'OVH
+  livre un `50-cloud-init.conf` avec `PasswordAuthentication yes`, et sshd
+  garde la *première* valeur lue — le durcissement doit donc être en
+  `00-…conf`. L'ancienne adresse `pickmysupplier.streamlit.app` est
+  **gardée volontairement** (elle est sur le CV de l'utilisateur) mais
+  n'affiche plus que « site has moved » + un bouton vers le nouveau
+  domaine : `sourcing_intel_cli/site_move.py` valide `MOVED_TO_URL`, un
+  réglage présent **uniquement** dans les secrets Streamlit Cloud (jamais
+  sur le VPS). Streamlit Cloud n'offre pas de redirection serveur, et la
+  tentative JS est bloquée par le sandbox des iframes Streamlit — le bouton
+  est le chemin fiable, et cette adresse continue de se mettre en veille.
 
 ## Prochaines étapes possibles (non commencées)
 

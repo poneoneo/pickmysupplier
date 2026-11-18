@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import uuid
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pandas as pd
 import streamlit as st
@@ -51,7 +52,9 @@ from sourcing_intel_cli.engine_and_database import (
 from sourcing_intel_cli.nl_search import apply_query_spec, build_query_spec
 from sourcing_intel_cli.proxies_providers import ScrapingBeeProxyProvider, ScrapingBeeKeyError
 from sourcing_intel_cli.product_naming import summarize_product_names
+from sourcing_intel_cli import MOVED_TO_URL
 from sourcing_intel_cli.scrape_from_disk import PageParser
+from sourcing_intel_cli.site_move import normalize_moved_to_url
 from sourcing_intel_cli.typed_datas import ProductDict, SupplierDict
 
 
@@ -727,6 +730,41 @@ def page_aide() -> None:
 # ---------------------------------------------------------------------------
 
 st.set_page_config(page_title="PickMySupplier", page_icon="🤏🛒", layout="wide")
+
+
+def _render_moved_page(url: str) -> None:
+	"""Show the "site has moved" page used by the old Streamlit Cloud address.
+
+	That address stays online because it's already on the author's CV, but
+	the app itself now runs on its own always-on domain. Streamlit Cloud
+	offers no server-side redirect, so this tries a client-side one (likely
+	blocked by Streamlit's sandboxed iframes, hence wrapped in try/catch)
+	and always shows a button as the reliable path.
+
+	:param url: Target URL, already validated by `normalize_moved_to_url`
+		(https only, no quote/angle-bracket characters), so it is safe to
+		embed in the link and the script below.
+	:type url: str
+	:return: None
+	:rtype: None
+	"""
+	host = urlsplit(url).hostname
+	st.title("🤏🛒 PickMySupplier has moved")
+	st.markdown(
+		f"The app now lives at **{host}** — always on, no more waiting for it "
+		"to wake up."
+	)
+	st.link_button(f"Go to {host} →", url, type="primary")
+	components.html(
+		f"<script>try {{ window.top.location.replace({json.dumps(url)}); }} catch (e) {{}}</script>",
+		height=0,
+	)
+
+
+_moved_to = normalize_moved_to_url(MOVED_TO_URL)
+if _moved_to:
+	_render_moved_page(_moved_to)
+	st.stop()
 
 
 @st.cache_resource(ttl=3600)
