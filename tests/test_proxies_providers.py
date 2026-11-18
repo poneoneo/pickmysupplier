@@ -11,6 +11,8 @@ import pytest
 from sourcing_intel_cli.proxies_providers import (
 	TARGET_COUNTRY,
 	ScrapingBeeKeyError,
+	TargetSiteBlockedError,
+	is_blocked_page,
 	_resolve_scrapingbee_key,
 	_fetch_via_scrapingbee,
 	_collect_html_pages,
@@ -76,6 +78,29 @@ class TestFetchViaScrapingbee:
 		stub = _StubAPIRequest(_StubResponse(401))
 		with pytest.raises(ScrapingBeeKeyError):
 			_fetch_via_scrapingbee(stub, "https://endpoint.example", "my-key", "https://target.example")
+
+	def test_429_reason_is_quota(self):
+		stub = _StubAPIRequest(_StubResponse(429))
+		with pytest.raises(ScrapingBeeKeyError) as exc_info:
+			_fetch_via_scrapingbee(stub, "https://endpoint.example", "my-key", "https://target.example")
+		assert exc_info.value.reason == "quota"
+
+	def test_401_with_monthly_limit_body_reason_is_quota(self):
+		# Real body observed 2026-11-18 on a free key that had used its
+		# 1000 calls: ScrapingBee answers 401, not 429, for an exhausted
+		# quota — the visitor used to be told their key was "invalid".
+		stub = _StubAPIRequest(
+			_StubResponse(401, '{"message":"Monthly API calls limit reached: 1000"}')
+		)
+		with pytest.raises(ScrapingBeeKeyError) as exc_info:
+			_fetch_via_scrapingbee(stub, "https://endpoint.example", "my-key", "https://target.example")
+		assert exc_info.value.reason == "quota"
+
+	def test_401_with_other_body_reason_is_invalid(self):
+		stub = _StubAPIRequest(_StubResponse(401, '{"message":"Invalid api key"}'))
+		with pytest.raises(ScrapingBeeKeyError) as exc_info:
+			_fetch_via_scrapingbee(stub, "https://endpoint.example", "my-key", "https://target.example")
+		assert exc_info.value.reason == "invalid"
 
 	def test_other_failure_status_returns_response_not_ok(self):
 		stub = _StubAPIRequest(_StubResponse(500))
@@ -144,3 +169,40 @@ class TestCollectHtmlPages:
 
 		assert first_pages == ["<html>first</html>"]
 		assert second_pages == ["<html>second</html>"]
+
+
+# Trimmed from a real ScrapingBee response (2026-11-18, premium proxy + JS):
+# HTTP 200, billed 25 credits, but the page is the target site's slider
+# captcha instead of search results.
+CAPTCHA_PAGE = (
+	"<html><head><title>Captcha Interception</title></head><body>"
+	'<div class="punish-page">Sorry, we have detected unusual traffic from your network.</div>'
+	'<script src="/trade/search/_____tmd_____/punish?x5secdata=abc"></script>'
+	"</body></html>"
+)
+
+
+class TestIsBlockedPage:
+	def test_detects_captcha_title(self):
+		assert is_blocked_page(CAPTCHA_PAGE) is True
+
+	def test_detects_punish_path_without_title(self):
+		html = '<html><body><script src="/x/_____tmd_____/punish?y=1"></script></body></html>'
+		assert is_blocked_page(html) is True
+
+	def test_normal_page_is_not_blocked(self):
+		assert is_blocked_page("<html><head><title>Wireless earbuds</title></head></html>") is False
+
+
+class TestCollectHtmlPagesStopsWhenBlocked:
+	def test_captcha_on_first_page_stops_before_spending_more_credits(self):
+		# Every page costs credits even when it's a captcha — stop at the
+		# first one instead of paying for pages 2..N that will be blocked too.
+		stub = _SequentialStubAPIRequest(
+			[_StubResponse(200, CAPTCHA_PAGE)] + [_StubResponse(200, "<html>ok</html>")] * 4
+		)
+		with pytest.raises(TargetSiteBlockedError):
+			_collect_html_pages(
+				stub, "https://endpoint.example", "my-key", "wireless earbuds", 5, _NoOpProgress(), task=None
+			)
+		assert len(stub.urls_requested) == 1

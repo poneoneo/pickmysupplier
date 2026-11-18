@@ -50,7 +50,11 @@ from sourcing_intel_cli.engine_and_database import (
 	save_all_changes,
 )
 from sourcing_intel_cli.nl_search import apply_query_spec, build_query_spec
-from sourcing_intel_cli.proxies_providers import ScrapingBeeProxyProvider, ScrapingBeeKeyError
+from sourcing_intel_cli.proxies_providers import (
+	ScrapingBeeKeyError,
+	ScrapingBeeProxyProvider,
+	TargetSiteBlockedError,
+)
 from sourcing_intel_cli.product_naming import summarize_product_names
 from sourcing_intel_cli import MOVED_TO_URL
 from sourcing_intel_cli.scrape_from_disk import PageParser
@@ -616,9 +620,24 @@ def page_scraper() -> None:
 			except ScrapingBeeKeyError as e:
 				logger.warning(f"ScrapingBee key problem: {e}")
 				st.session_state["sb_quota_exhausted"] = True
+				if e.reason == "quota":
+					st.error(
+						"Your ScrapingBee key has no credits left. Check your "
+						"ScrapingBee dashboard — free credits are limited — or load "
+						"the demo dataset below."
+					)
+				else:
+					st.error(
+						"Your ScrapingBee key was refused (invalid, expired, or "
+						"revoked). Copy it again from your ScrapingBee dashboard."
+					)
+				st.stop()
+			except TargetSiteBlockedError as e:
+				logger.warning(f"Target site blocked the scrape: {e}")
 				st.error(
-					"Your ScrapingBee key isn't working (out of credits, or "
-					"invalid/expired). Check your ScrapingBee account or try again later."
+					"The marketplace answered with a captcha instead of results, so "
+					"the scrape stopped after the first page to save your credits. "
+					"Try again later, or load the demo dataset below."
 				)
 				st.stop()
 			except Exception:  # noqa: BLE001
