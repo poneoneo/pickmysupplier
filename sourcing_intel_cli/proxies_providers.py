@@ -7,6 +7,8 @@ Additionally, it utilizes loguru for logging purposes and decouple for
 managing environment variables.
 """
 
+import re
+
 from loguru import logger
 from playwright.sync_api import sync_playwright
 from rich import print as rprint
@@ -41,14 +43,54 @@ def _resolve_scrapingbee_key(visitor_key: str | None, fallback_key: str) -> str:
 class ScrapingBeeKeyError(RuntimeError):
 	"""Raised when ScrapingBee reports the API key can't be used right now.
 
-	Covers both HTTP 429 (a valid key, but out of credits) and HTTP 401 (an
-	invalid, revoked, or expired key) — from a visitor's point of view both
-	mean the same thing: this key isn't working, get a working one. Without
-	catching 401 too, a revoked/terminated key used to fail silently, one
-	page at a time, via the generic "not ok, skip this page" path — ending
-	the scrape with zero pages and no indication to the user that the key
-	was the actual problem.
+	Covers both an exhausted quota and an invalid, revoked, or expired key.
+	Without catching 401 too, a revoked/terminated key used to fail
+	silently, one page at a time, via the generic "not ok, skip this page"
+	path — ending the scrape with zero pages and no indication to the user
+	that the key was the actual problem.
+
+	:param message: Human-readable description, for the logs.
+	:type message: str
+	:param reason: `"quota"` (valid key, out of credits) or `"invalid"`
+		(invalid, revoked, or expired key) — lets the UI tell the visitor
+		which one it is instead of a vague "out of credits or invalid".
+	:type reason: str
 	"""
+
+	def __init__(self, message: str, reason: str):
+		super().__init__(message)
+		self.reason = reason
+
+
+class TargetSiteBlockedError(RuntimeError):
+	"""Raised when the target site answered with a captcha page instead of results.
+
+	ScrapingBee still returns HTTP 200 for it and bills it like a real page
+	(25 credits with premium proxy + JS rendering, measured 2026-11-18), so
+	the scrape stops at the first one rather than paying for every
+	remaining page only to get the same captcha back.
+	"""
+
+
+# Markers of the target site's anti-bot "punish" page, taken from a real
+# captcha response (title "Captcha Interception", assets and redirect under
+# a `_____tmd_____/punish` path).
+_CAPTCHA_TITLE = re.compile(r"<title>[^<]*captcha[^<]*</title>", re.IGNORECASE)
+_PUNISH_PATH = "_____tmd_____/punish"
+# What ScrapingBee's 401 body says when the key is fine but its monthly
+# call quota is used up (observed: "Monthly API calls limit reached: 1000").
+_QUOTA_REACHED = re.compile(r"limit reached", re.IGNORECASE)
+
+
+def is_blocked_page(html: str) -> bool:
+	"""Whether `html` is the target site's captcha page rather than search results.
+
+	:param html: The page HTML as returned by ScrapingBee.
+	:type html: str
+	:return: True if the page is a captcha/anti-bot interception page.
+	:rtype: bool
+	"""
+	return bool(_CAPTCHA_TITLE.search(html)) or _PUNISH_PATH in html
 
 
 def _fetch_via_scrapingbee(api_request, endpoint: str, api_key: str, url: str):
@@ -69,8 +111,9 @@ def _fetch_via_scrapingbee(api_request, endpoint: str, api_key: str, url: str):
 	:type api_key: str
 	:param url: The target page URL to scrape.
 	:type url: str
-	:raises ScrapingBeeKeyError: If ScrapingBee reports HTTP 429 (credits
-		exhausted) or HTTP 401 (invalid/revoked/expired key).
+	:raises ScrapingBeeKeyError: If ScrapingBee reports HTTP 429 or a 401
+		whose body says the monthly limit is reached (`reason="quota"`), or
+		any other HTTP 401 (`reason="invalid"`).
 	:return: The response object (`.ok`, `.status`, `.text()`).
 	"""
 	response = api_request.get(
@@ -85,9 +128,22 @@ def _fetch_via_scrapingbee(api_request, endpoint: str, api_key: str, url: str):
 		timeout=0,
 	)
 	if response.status == 429:
-		raise ScrapingBeeKeyError("The ScrapingBee key has run out of credits (HTTP 429).")
+		raise ScrapingBeeKeyError(
+			"The ScrapingBee key has run out of credits (HTTP 429).", reason="quota"
+		)
 	if response.status == 401:
-		raise ScrapingBeeKeyError("The ScrapingBee key is invalid, expired, or revoked (HTTP 401).")
+		# ScrapingBee also uses 401 for an exhausted quota, not only for a
+		# bad key — tell them apart by the body, or a visitor who simply
+		# used up their credits is told their key is invalid.
+		body = response.text()
+		if _QUOTA_REACHED.search(body):
+			raise ScrapingBeeKeyError(
+				f"The ScrapingBee key has run out of credits (HTTP 401: {body[:200]}).",
+				reason="quota",
+			)
+		raise ScrapingBeeKeyError(
+			"The ScrapingBee key is invalid, expired, or revoked (HTTP 401).", reason="invalid"
+		)
 	return response
 
 
@@ -118,6 +174,8 @@ def _collect_html_pages(
 	:type page_results: int
 	:param progress: The `rich.progress.Progress` bar to advance as pages complete.
 	:param task: The `Progress` task id returned by `progress.add_task`.
+	:raises TargetSiteBlockedError: As soon as one page comes back as the
+		target site's captcha page — no further page is requested.
 	:return: The HTML content of every page that responded OK, in order.
 	:rtype: list[str]
 	"""
@@ -134,8 +192,14 @@ def _collect_html_pages(
 		logger.info(
 			f"Returns the text representation of response body from page {url.split('page=')[1]} ... "
 		)
+		html = response.text()
+		if is_blocked_page(html):
+			raise TargetSiteBlockedError(
+				f"The target site answered page {url.split('page=')[1]} with a captcha; "
+				"stopping before spending credits on the remaining pages."
+			)
 		progress.start_task(task)
-		html_pages.append(response.text())
+		html_pages.append(html)
 		progress.update(task, advance=100 / page_results)
 		logger.info(f"Closing the page {url.split('page=')[1]} ... ")
 	return html_pages
@@ -174,6 +238,8 @@ class ScrapingBeeProxyProvider:
 			401) — callers should catch this before the generic
 			`RuntimeError` to show a specific "your key isn't working"
 			message rather than a generic scraping-failed one.
+		:raises TargetSiteBlockedError: If the target site answers with a
+			captcha page — also to be caught before `RuntimeError`.
 		"""
 		resolved_key = _resolve_scrapingbee_key(api_key, cls.SB_API_KEY)
 		if resolved_key == "":
