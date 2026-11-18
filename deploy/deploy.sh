@@ -8,10 +8,17 @@ set -euo pipefail
 
 cd /opt/pickmysupplier
 
-echo "==> Récupération de main"
-git fetch --quiet origin main
-git reset --hard --quiet origin/main
-echo "    version : $(git log -1 --format='%h %s')"
+if [ "${DEPLOY_SCRIPT_UPDATED:-}" != "1" ]; then
+	echo "==> Récupération de main"
+	git fetch --quiet origin main
+	git reset --hard --quiet origin/main
+	echo "    version : $(git log -1 --format='%h %s')"
+	# `git reset` vient peut-être de remplacer CE script : bash continuerait
+	# d'exécuter l'ancienne version déjà ouverte, et toute modification de
+	# deploy.sh ne s'appliquerait qu'au déploiement suivant. On relance
+	# donc la version à jour (une seule fois, grâce à la variable).
+	DEPLOY_SCRIPT_UPDATED=1 exec "$0" "$@"
+fi
 
 echo "==> Reconstruction et redémarrage"
 # --wait : attend que le healthcheck de l'app soit vert ; sinon la commande
