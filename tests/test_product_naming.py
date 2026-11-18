@@ -81,6 +81,22 @@ class TestSummarizeProductNames:
 			result = summarize_product_names([LONG_NAME])
 		assert result[LONG_NAME] == "Rugged Android Tablet PDA Scanner"
 
+	def test_uses_low_reasoning_effort(self):
+		# Same gpt-oss-20b JSON-mode failure as nl_search: measured 4/5 real
+		# calls returning 400 json_validate_failed with the default
+		# reasoning effort — silently falling back to plain truncation —
+		# vs 5/5 good short names with reasoning_effort="low".
+		client = MagicMock()
+		completion = MagicMock()
+		completion.choices = [MagicMock(message=MagicMock(content=json.dumps({"0": "Tablet"})))]
+		client.chat.completions.create.return_value = completion
+		with (
+			patch("sourcing_intel_cli.product_naming.GROQ_API_KEY", "test-key"),
+			patch("sourcing_intel_cli.product_naming.Groq", return_value=client),
+		):
+			summarize_product_names([LONG_NAME])
+		assert client.chat.completions.create.call_args.kwargs["reasoning_effort"] == "low"
+
 	def test_falls_back_to_truncation_when_api_key_missing(self):
 		with patch("sourcing_intel_cli.product_naming.GROQ_API_KEY", ""):
 			result = summarize_product_names([LONG_NAME])
