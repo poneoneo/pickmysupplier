@@ -19,6 +19,15 @@ apt-get update -q
 apt-get upgrade -yq
 apt-get install -yq ca-certificates curl git ufw unattended-upgrades
 
+echo "==> Swap de 2 Go (filet de sécurité pour le build Docker sur les petits serveurs)"
+if ! swapon --show | grep -q /swapfile; then
+	fallocate -l 2G /swapfile
+	chmod 600 /swapfile
+	mkswap /swapfile >/dev/null
+	swapon /swapfile
+	grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
 echo "==> Mises à jour de sécurité automatiques"
 cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
