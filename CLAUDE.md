@@ -113,6 +113,9 @@ sourcing_intel_cli_project/
     │                                       render_echarts_html() : rendu HTML brut (pas de wrapper)
     ├── product_naming.py                  # summarize_product_names() (Groq, repli déterministe
     │                                        truncate_at_word_boundary) : noms de produits raccourcis
+    ├── data_coverage.py               # mark_missing_values() / unavailable_columns() : notes vides
+    │                                     (0) -> manquantes, champs absents exclus des graphiques et des
+    │                                     questions suggérées (voir Historique, 2026-11-18)
     ├── models.py                     # SQLModel: Product, Supplier
     ├── typed_datas.py                 # TypedDict: ProductDict, SupplierDict (contrat scraper -> DB)
     ├── engine_and_database.py          # Connexion DB, add_suppliers_to_db, add_products_to_db
@@ -408,6 +411,27 @@ le numéro, relancer `python -m pytest`, puis commit.
   restent lisibles (`card_to_offer`, repli sur les cartes) si l'API
   disparaît. Arrêt dès le premier captcha (`TargetSiteBlockedError`) et
   `ScrapingBeeKeyError.reason` (`quota`/`invalid`) gardés.
+
+- **Couverture des données le 2026-11-18** (même PR #40) — un scrape
+  live ne remplit pas toutes les colonnes : pas de statut « vérifié »
+  (`"unknown"`), les 5 booléens jamais fournis (False), et des notes
+  laissées vides par le site (stockées 0.0). Lues telles quelles, elles
+  faussaient l'analyse (une note vide comptée 0/5 tire toutes les moyennes
+  vers le bas ; un graphique « Trade Assurance » à 0 % partout).
+  `data_coverage.py` les transforme **à la lecture** (pas de migration de
+  schéma) : notes à 0 -> NaN, `"unknown"` -> manquant ; colonnes sans
+  aucune donnée -> exclues des graphiques fixes (remplacées ou signalées)
+  et des questions suggérées (qui sont aussi remplies avec les vraies
+  valeurs du jeu : pays, certification) ; avertissement si une question en
+  langage naturel porte sur un champ absent (`apply_query_spec` ignore
+  sinon le filtre en silence et renverrait tout, comme si tout était
+  vérifié) ; note visible sur la page Explore (« non disponible », « en
+  partie vide : X % »). Le jeu de démo, complet, n'est pas concerné.
+  Trouvé au passage : 13 offres réelles sur 80 (produits sans avis, surtout
+  de nouveaux fournisseurs) n'ont pas de clé `reviewCount` et étaient
+  **jetées en silence** par un KeyError — biais vers les produits déjà
+  notés. Les scores sont maintenant optionnels dans `_produtcs_appender`
+  (68 produits retenus au lieu de 57 sur les mêmes pages).
 
 ## Prochaines étapes possibles (non commencées)
 

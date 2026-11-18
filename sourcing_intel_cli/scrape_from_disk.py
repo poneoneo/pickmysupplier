@@ -204,10 +204,15 @@ class PageParser:
 					"minimum_to_order": parse_moq_text(offer["moq"]),
 					"ordered_or_sold": parse_sold_count(offer.get("soldOrder")),
 					"supplied_by": offer["companyName"].lower(),
-					"product_score": safe_float(offer["productScore"]),
-					"review_count": safe_float(offer["reviewCount"]),
-					"review_score": safe_float(offer["reviewScore"]),
-					"shipping_time_score": safe_float(offer["shippingScore"]),
+					# Optional: a product with no review yet has no `reviewCount`
+					# key at all (13 of 80 real offers, 2026-11-18) and used to be
+					# dropped by a KeyError, biasing every dataset toward
+					# already-reviewed products. Missing -> 0.0; blank ratings
+					# are then read back as missing values (data_coverage.py).
+					"product_score": safe_float(offer.get("productScore")),
+					"review_count": safe_float(offer.get("reviewCount")),
+					"review_score": safe_float(offer.get("reviewScore")),
+					"shipping_time_score": safe_float(offer.get("shippingScore")),
 					"is_full_promotion": False,
 					"customizable": False,
 					"instant_order": False,

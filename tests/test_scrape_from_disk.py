@@ -215,7 +215,22 @@ class TestApiJsonPages:
 
 	def test_reads_offers_from_json_files(self, api_parser):
 		names = {p["name"] for p in api_parser.detected_products()}
-		assert names == {"acme wireless earbuds pro x", "globex bluetooth headset"}
+		assert names == {
+			"acme wireless earbuds pro x",
+			"globex bluetooth headset",
+			"hooli mini speaker (new supplier, no reviews yet)",
+		}
+
+	def test_offer_without_review_count_is_kept(self, api_parser):
+		# Measured 2026-11-18: 13 of 80 real offers (products with no review
+		# yet, mostly new suppliers) have no `reviewCount` key at all. They
+		# used to be dropped by a KeyError, silently biasing every dataset
+		# toward already-reviewed products.
+		products = {p["name"]: p for p in api_parser.detected_products()}
+		hooli = products["hooli mini speaker (new supplier, no reviews yet)"]
+		assert hooli["review_count"] == 0.0
+		assert hooli["product_score"] == 0.0  # blank -> missing at read time
+		assert hooli["min_price"] == 2.50
 
 	def test_product_scores_and_certifications_are_kept(self, api_parser):
 		products = {p["name"]: p for p in api_parser.detected_products()}
@@ -254,7 +269,7 @@ class TestApiJsonPages:
 		suppliers = api_parser.detected_suppliers()
 		products = api_parser.detected_products()
 		_, clean_products, issues = run_quality_checks(suppliers, products)
-		assert len(clean_products) == 2
+		assert len(clean_products) == 3
 		assert issues == []
 
 
