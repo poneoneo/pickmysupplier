@@ -28,7 +28,11 @@ services:
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN doit être défini dans deploy/.env}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Dossier monté, pas le fichier seul : `git reset` (deploy.sh) remplace
+      # le Caddyfile par un nouveau fichier, et un montage de fichier unique
+      # reste accroché à l'ancien — le conteneur ne voyait jamais les
+      # modifications. deploy.sh recharge ensuite Caddy (sans coupure).
+      - ./caddy:/etc/caddy:ro
       - caddy_data:/data
       - caddy_config:/config
 
