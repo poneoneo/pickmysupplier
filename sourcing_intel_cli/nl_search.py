@@ -126,6 +126,12 @@ def build_query_spec(question: str, df: pd.DataFrame) -> dict:
 		model=GROQ_MODEL,
 		response_format={"type": "json_object"},
 		temperature=0,
+		# gpt-oss-20b is a reasoning model: with temperature=0 + JSON mode and
+		# the default effort it often returns an EMPTY generation, which Groq
+		# rejects as 400 json_validate_failed (measured on real calls: 6/8
+		# failures for "suppliers in China"; 17/17 valid, stable specs with
+		# "low" across the app's example questions).
+		reasoning_effort="low",
 	)
 	content = completion.choices[0].message.content
 	try:

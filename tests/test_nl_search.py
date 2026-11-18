@@ -304,6 +304,20 @@ class TestBuildQuerySpec:
 		assert kwargs["response_format"] == {"type": "json_object"}
 		assert kwargs["temperature"] == 0
 
+	def test_uses_low_reasoning_effort(self):
+		# Measured with real Groq calls (2026-11-18): gpt-oss-20b with
+		# temperature=0 + JSON mode and the default reasoning effort returned
+		# an empty generation -> 400 json_validate_failed on 6/8 calls for
+		# "suppliers in China"; with reasoning_effort="low", 17/17 valid,
+		# stable and correct specs across the app's example questions.
+		client = _mock_groq_client({"filters": []})
+		with (
+			patch("sourcing_intel_cli.nl_search.GROQ_API_KEY", "test-key"),
+			patch("sourcing_intel_cli.nl_search.Groq", return_value=client),
+		):
+			build_query_spec("une question", _df())
+		assert client.chat.completions.create.call_args.kwargs["reasoning_effort"] == "low"
+
 	def test_raises_runtime_error_on_invalid_json(self):
 		client = MagicMock()
 		completion = MagicMock()

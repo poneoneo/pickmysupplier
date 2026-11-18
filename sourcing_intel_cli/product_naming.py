@@ -124,6 +124,11 @@ def summarize_product_names(
 				model=GROQ_MODEL,
 				response_format={"type": "json_object"},
 				temperature=0,
+				# Same gpt-oss-20b JSON-mode issue as nl_search.build_query_spec:
+				# default reasoning effort -> empty generation -> 400
+				# json_validate_failed on 4/5 real calls, silently falling
+				# back to truncation; "low" -> 5/5 good short names.
+				reasoning_effort="low",
 			)
 			shortened = json.loads(completion.choices[0].message.content)
 		except Exception:  # noqa: BLE001
