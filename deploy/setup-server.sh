@@ -53,7 +53,10 @@ ufw allow 443/udp
 ufw --force enable
 
 echo "==> SSH : connexion par clé uniquement"
-cat > /etc/ssh/sshd_config.d/99-pickmysupplier.conf <<'EOF'
+# Préfixe 00- : sshd garde la PREMIÈRE valeur lue pour chaque option, et les
+# images cloud (ex. OVH) livrent un 50-cloud-init.conf avec
+# "PasswordAuthentication yes" qui l'emporterait sur un fichier 99-.
+cat > /etc/ssh/sshd_config.d/00-pickmysupplier.conf <<'EOF'
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin prohibit-password

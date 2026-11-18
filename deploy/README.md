@@ -1,6 +1,6 @@
 # Déploiement sur VPS
 
-Le site tourne sur un VPS (Hetzner, Ubuntu 24.04) dans Docker, derrière
+Le site tourne sur un VPS (OVHcloud VPS-1, Beauharnois QC, Ubuntu 24.04) dans Docker, derrière
 Caddy, qui gère le HTTPS automatiquement. Il ne se met jamais en veille,
 contrairement à l'offre gratuite de Streamlit Community Cloud.
 
@@ -54,12 +54,12 @@ peut aussi être relancé à la main (« Run workflow » sur *Deploy*).
 
 ## Installation initiale (une seule fois)
 
-1. Créer le serveur sur Hetzner Cloud (Ubuntu 24.04, avec ta clé SSH
-   publique).
+1. Créer le serveur (OVHcloud VPS, Ubuntu 24.04) et y ajouter ta clé SSH
+   publique (utilisateur `ubuntu` chez OVH).
 2. Faire pointer le domaine vers son IP (enregistrement DNS `A`). En
    attendant d'avoir un domaine, on peut utiliser `<ip>.sslip.io`.
-3. Sur le serveur, en root :
-   `DEPLOY_PUBKEY="<clé publique de déploiement>" bash setup-server.sh`
+3. Depuis ton PC, lancer la préparation du serveur (avec `sudo`) :
+   `ssh ubuntu@<ip> "sudo DEPLOY_PUBKEY='<clé publique de déploiement>' bash -s" < deploy/setup-server.sh`
 4. Créer `/opt/pickmysupplier/deploy/.env` à partir de `.env.example`
    (propriétaire `deploy`, `chmod 600`).
 5. Lancer le premier déploiement : `sudo -u deploy /opt/pickmysupplier/deploy/deploy.sh`.
