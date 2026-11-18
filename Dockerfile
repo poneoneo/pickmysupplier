@@ -26,9 +26,13 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY --chown=app:app . .
+# /app lui-même doit appartenir à `app` (COPY --chown ne change que les
+# fichiers copiés, pas WORKDIR, créé par root) : le chargement du jeu de
+# démo écrit data_quality_report.json et sourcing_intel_demo.sqlite à la
+# racine du projet — PermissionError en production sinon.
 # sessions/ (données scrapées par visiteur) et logs/ sont montés en volumes
 # par docker-compose ; les créer ici leur donne le bon propriétaire.
-RUN mkdir -p sessions logs && chown app:app sessions logs
+RUN chown app:app /app && mkdir -p sessions logs && chown app:app sessions logs
 
 USER app
 EXPOSE 8501

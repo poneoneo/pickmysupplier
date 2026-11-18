@@ -1,7 +1,7 @@
 # PickMySupplier
 
 <p align="center"><b>Scrape a B2B marketplace, validate the data, and query it in plain English.</b></p>
-<p align="center">🚀 <a href="https://pickmysupplier.streamlit.app">Live demo</a></p>
+<p align="center">🚀 <a href="https://pickmysupplier.com">Live demo</a></p>
 
 <div align="center">
 
@@ -280,7 +280,10 @@ of this README).
 
 ✅ Already done: raw data export to CSV, removal of BrightData
 (ScrapingBee is now the only proxy provider), public hosting — live at
-[pickmysupplier.streamlit.app](https://pickmysupplier.streamlit.app).
+[pickmysupplier.com](https://pickmysupplier.com), on an always-on VPS
+(Docker + Caddy, auto-deployed after every green CI run on `main` — see
+[`deploy/README.md`](deploy/README.md)). The former
+`pickmysupplier.streamlit.app` address now points visitors there.
 
 **Got an idea to make this more useful?** Open an
 [issue](https://github.com/poneoneo/pickmysupplier/issues/new) to
