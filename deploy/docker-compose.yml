@@ -1,0 +1,39 @@
+# Lancé sur le VPS par deploy/deploy.sh :
+#   docker compose -f deploy/docker-compose.yml up -d --build --wait
+# Variables lues dans deploy/.env (non committé, voir deploy/.env.example).
+
+services:
+  app:
+    build:
+      context: ..
+    image: pickmysupplier:latest
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - sessions:/app/sessions
+      - logs:/app/logs
+    # Pas de port publié : seul Caddy est joignable depuis Internet.
+    expose:
+      - "8501"
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN doit être défini dans deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  sessions:
+  logs:
+  caddy_data:
+  caddy_config:
