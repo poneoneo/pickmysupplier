@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from sourcing_intel_cli.proxies_utils import urls_pusher
 from sourcing_intel_cli.proxies_providers import (
 	TARGET_COUNTRY,
 	ScrapingBeeKeyError,
@@ -56,15 +57,17 @@ class TestFetchViaScrapingbee:
 		_fetch_via_scrapingbee(stub, "https://endpoint.example", "my-key", "https://target.example")
 		assert stub.last_params["api_key"] == "my-key"
 
-	def test_pins_country_and_stealth_proxy(self):
-		# Measured 2026-11-18: premium proxy + JS got the target site's
-		# captcha 3 times out of 3; stealth proxy got the real results page.
+	def test_pins_country_premium_proxy_without_js(self):
+		# The target is the site's product search API (JSON), so no JS
+		# rendering: 10 credits/page with premium, vs 75 for the stealth
+		# proxy the HTML results page needed (measured 2026-11-18). Premium
+		# is required for country_code, which keeps prices in USD.
 		stub = _StubAPIRequest(_StubResponse(200))
 		_fetch_via_scrapingbee(stub, "https://endpoint.example", "my-key", "https://target.example")
 		assert stub.last_params["country_code"] == TARGET_COUNTRY
-		assert stub.last_params["stealth_proxy"] == "true"
-		assert stub.last_params["render_js"] == "true"
-		assert "premium_proxy" not in stub.last_params
+		assert stub.last_params["premium_proxy"] == "true"
+		assert stub.last_params["render_js"] == "false"
+		assert "stealth_proxy" not in stub.last_params
 
 	def test_429_raises_key_error(self):
 		# Quota exceeded on an otherwise-valid key.
@@ -210,3 +213,18 @@ class TestCollectHtmlPagesStopsWhenBlocked:
 				stub, "https://endpoint.example", "my-key", "wireless earbuds", 5, _NoOpProgress(), task=None
 			)
 		assert len(stub.urls_requested) == 1
+
+
+class TestUrlsPusher:
+	def test_targets_the_product_search_api_one_url_per_page(self):
+		urls = list(urls_pusher("wireless earbuds", 3))
+		assert len(urls) == 3
+		assert all("/search/api/proTextSearch?" in url for url in urls)
+		assert [url.split("page=")[1] for url in urls] == ["1", "2", "3"]
+
+	def test_encodes_keywords_and_asks_for_usd(self):
+		url = next(urls_pusher("led strip & bulbs", 1))
+		assert "query=led+strip+%26+bulbs" in url
+		# Measured 2026-11-18: without it, prices come back in the proxy
+		# exit node's currency (EUR, GBP...).
+		assert "currency=USD" in url

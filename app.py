@@ -596,11 +596,8 @@ def page_scraper() -> None:
 		"Number of pages",
 		min_value=1,
 		max_value=50,
-		value=1,
-		help=(
-			"Each page (about 60 products) costs 75 ScrapingBee credits: the "
-			"marketplace blocks cheaper proxies with a captcha."
-		),
+		value=5,
+		help="Each page (about 40 products) costs 10 ScrapingBee credits.",
 	)
 
 	if not user_scrapingbee_key:
@@ -698,8 +695,8 @@ def page_aide() -> None:
 		   top of the page, under **API Key** — copy it with the icon next to it.
 		3. The free plan includes a number of trial credits (check the
 		   exact amount on their pricing page, it can change). Each
-		   scraped page (about 60 products) costs **75 credits**, so 1,000
-		   free credits cover about 13 pages — start with 1 page per search.
+		   scraped page (about 40 products) costs **10 credits**, so 1,000
+		   free credits cover about 100 pages.
 		4. Come back to the **Scraper** page on this site and paste your key into the
 		   *"Your ScrapingBee key"* field — the *"Scrape live"* button
 		   stays disabled until you do.

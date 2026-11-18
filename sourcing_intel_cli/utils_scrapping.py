@@ -471,3 +471,22 @@ def card_to_offer(card: LexborNode) -> dict | None:
 		offer["countryCode"] = country
 		offer["goldSupplierYears"] = years
 	return offer
+
+
+_USD_PRICE = re.compile(r"^\s*(?:US\s*)?\$")
+
+
+def is_usd_price(price_text: str) -> bool:
+	"""Whether a scraped price string is in US dollars ("$4.80-5.18", "US$ 3").
+
+	Prices are requested in USD (`TARGET_COUNTRY` + `currency=USD`), but a
+	proxy exit node can still win (measured 2026-11-18: EUR and GBP came
+	back without the currency parameter). `get_product_price` drops the
+	symbol, so a price in another currency would be stored as dollars.
+
+	:param price_text: The raw price string from an offer.
+	:type price_text: str
+	:return: True if the price is denominated in US dollars.
+	:rtype: bool
+	"""
+	return bool(_USD_PRICE.match(price_text))

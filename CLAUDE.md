@@ -47,7 +47,9 @@ Thème sombre (`.streamlit/config.toml`).
 ## Stack technique
 
 - **Scraping** : Playwright (`playwright.request` comme client HTTP pur, pas de
-  navigateur piloté), via ScrapingBee (API REST, rendu JS côté serveur).
+  navigateur piloté), via ScrapingBee (API REST, proxy premium sans rendu JS),
+  qui interroge l'API de recherche produits du site (JSON) — voir Historique
+  des décisions (2026-11-18).
   Syphoon a été retiré (service disparu) puis BrightData (CDP, Scraping
   Browser) a aussi été retiré le 2026-08-20 à la demande de l'utilisateur —
   ScrapingBee est maintenant le seul fournisseur de proxy. Chaque visiteur
@@ -380,24 +382,32 @@ le numéro, relancer `python -m pytest`, puis commit.
   tentative JS est bloquée par le sandbox des iframes Streamlit — le bouton
   est le chemin fiable, et cette adresse continue de se mettre en veille.
 
-- **Scraping live réparé le 2026-11-18** (PR #39 + PR suivante) — les
-  visiteurs vidaient leurs crédits ScrapingBee sans rien obtenir. Mesuré
-  avec de vrais appels : (1) en proxy premium + JS, le site cible renvoyait
-  une page captcha 3 fois sur 3, facturée 25 crédits comme une vraie page
-  (HTTP 200) ; (2) ScrapingBee répond 401 (pas 429) quand le quota mensuel
-  est épuisé, et l'app disait alors « clé invalide » ; (3) même sur une page
-  non bloquée, le site n'embarque plus le JSON
-  `window.__page__data_sse*._offer_list` — les résultats ne sont plus que
-  dans le HTML des cartes `.fy26-product-card`, donc 0 produit parsé.
-  Correctifs : arrêt dès le premier captcha (`TargetSiteBlockedError`),
-  `ScrapingBeeKeyError.reason` (`quota`/`invalid`), proxy **stealth**
-  (75 crédits/page, seul mode mesuré qui passe le captcha, prix en USD),
-  1 page par défaut au lieu de 5, et `utils_scrapping.card_to_offer` qui
-  reconstruit les offres depuis les cartes quand le JSON est absent (le
-  JSON reste préféré s'il revient). Les scores produit/livraison/service
-  fournisseur et les noms de certifications ne sont plus affichés sur les
-  cartes : valeurs neutres (0.0 / ""), jamais devinées. Le mode sans JS a
-  été testé et écarté : la page sans JS ne contient aucun résultat.
+- **Scraping live réparé le 2026-11-18** (PR #39 + #40) — les visiteurs
+  vidaient leurs crédits ScrapingBee sans rien obtenir. Mesuré avec de
+  vrais appels : (1) en proxy premium + JS, la page de résultats HTML
+  renvoyait un captcha 3 fois sur 3, facturé 25 crédits comme une vraie
+  page (HTTP 200) ; (2) ScrapingBee répond 401 (pas 429) quand le quota
+  mensuel est épuisé, et l'app disait alors « clé invalide » ; (3) la page
+  HTML n'embarque plus le JSON `window.__page__data_sse*._offer_list` —
+  les résultats n'y sont plus que dans les cartes `.fy26-product-card`,
+  **sans** les scores produit/livraison/service ni les noms de
+  certifications. Seul le proxy stealth (75 crédits/page) passait le
+  captcha. Solution retenue, **avec l'accord explicite de l'utilisateur**
+  (il a accepté le risque CGU supplémentaire d'appeler une API interne non
+  documentée, au-delà du scraping de pages publiques) : le scraper
+  interroge l'API de recherche produits du site
+  (`proxies_utils.SEARCH_API_URL`, JSON, 40 offres/page) — tous les champs
+  y sont (`supplierServiceScore` renommé `supplierService`), pour
+  **10 crédits/page** (premium sans JS, `country_code` + `currency=USD`).
+  Le proxy de base à 1 crédit marche aussi mais la devise suit le nœud de
+  sortie même avec `currency=USD` (2 fois sur 3 en USD, sinon GBP) —
+  écarté. Garde-fou : `is_usd_price` rejette toute offre hors USD (le
+  symbole est retiré au parsing, elle serait sinon stockée comme des
+  dollars). Seul champ perdu : le badge « vérifié » par offre (absent de
+  l'API) → `verification_mode = "unknown"`, jamais deviné. Les pages HTML
+  restent lisibles (`card_to_offer`, repli sur les cartes) si l'API
+  disparaît. Arrêt dès le premier captcha (`TargetSiteBlockedError`) et
+  `ScrapingBeeKeyError.reason` (`quota`/`invalid`) gardés.
 
 ## Prochaines étapes possibles (non commencées)
 

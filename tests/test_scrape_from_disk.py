@@ -196,3 +196,70 @@ class TestHtmlCardFallback:
 		# fallback's defaults) must still be used.
 		supplier = parser.detected_suppliers()[0]
 		assert supplier["supplier_service_score"] == 4.7
+
+
+API_FIXTURES_DIR = Path(__file__).parent / "fixtures" / "scraped_api_sample"
+
+
+class TestApiJsonPages:
+	"""Since 2026-11-18 the scraper fetches the site's product search API
+	(JSON) instead of the HTML results page: it is the only source that
+	still carries product/shipping/supplier-service scores and
+	certification names, for 10 credits a page instead of 75. Synthetic
+	fixture, same shape as the real response.
+	"""
+
+	@pytest.fixture
+	def api_parser(self):
+		return PageParser(targeted_folder=API_FIXTURES_DIR)
+
+	def test_reads_offers_from_json_files(self, api_parser):
+		names = {p["name"] for p in api_parser.detected_products()}
+		assert names == {"acme wireless earbuds pro x", "globex bluetooth headset"}
+
+	def test_product_scores_and_certifications_are_kept(self, api_parser):
+		products = {p["name"]: p for p in api_parser.detected_products()}
+		pro_x = products["acme wireless earbuds pro x"]
+		assert pro_x["min_price"] == 6.47
+		assert pro_x["max_price"] == 12.77
+		assert pro_x["product_score"] == 4.8
+		assert pro_x["shipping_time_score"] == 4.7
+		assert pro_x["review_score"] == 4.9
+		assert pro_x["review_count"] == 121.0
+		assert pro_x["certifications"] == "FCC,CE"
+		assert pro_x["ordered_or_sold"] == 1474.0
+
+	def test_empty_review_fields_default_to_zero(self, api_parser):
+		products = {p["name"]: p for p in api_parser.detected_products()}
+		assert products["globex bluetooth headset"]["review_score"] == 0.0
+
+	def test_non_usd_price_is_skipped_not_stored(self, api_parser):
+		# A price in another currency would be stored as if it were dollars.
+		names = {p["name"] for p in api_parser.detected_products()}
+		assert not any("initech" in name for name in names)
+
+	def test_supplier_service_score_and_unknown_verification(self, api_parser):
+		suppliers = {s["name"]: s for s in api_parser.detected_suppliers()}
+		acme = suppliers["shenzhen acme co., ltd."]
+		assert acme["supplier_service_score"] == 4.6
+		assert acme["sopi_level"] == 3
+		assert acme["country_name"] == "chine"
+		assert acme["gold_supplier_year"] == "6"
+		# The API has no per-offer "verified" badge: unknown, not guessed.
+		assert acme["verified_type"] == "unknown"
+
+	def test_api_rows_pass_the_data_quality_checks(self, api_parser):
+		from sourcing_intel_cli.data_quality import run_quality_checks
+
+		suppliers = api_parser.detected_suppliers()
+		products = api_parser.detected_products()
+		_, clean_products, issues = run_quality_checks(suppliers, products)
+		assert len(clean_products) == 2
+		assert issues == []
+
+
+def test_write_to_disk_saves_json_responses_as_json(tmp_path):
+	from sourcing_intel_cli.html_to_disk import write_to_disk
+
+	write_to_disk(str(tmp_path), ['{"model": {"offers": []}}', "<html></html>"])
+	assert sorted(f.name for f in tmp_path.iterdir()) == ["page_1.json", "page_2.html"]
