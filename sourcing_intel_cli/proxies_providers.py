@@ -121,7 +121,13 @@ def _fetch_via_scrapingbee(api_request, endpoint: str, api_key: str, url: str):
 		params={
 			"api_key": api_key,
 			"url": url,
-			"render_js": "true",
+			# The target is the site's product search API (JSON, see
+			# `proxies_utils.SEARCH_API_URL`): no JS to render. Premium proxy
+			# (10 credits/page) because `country_code` requires it. Measured
+			# 2026-11-18: the HTML results page needed the stealth proxy (75
+			# credits/page) to get past a captcha, and premium + JS on it got
+			# the captcha 3/3 (25 credits each, for nothing).
+			"render_js": "false",
 			"premium_proxy": "true",
 			"country_code": TARGET_COUNTRY,
 		},

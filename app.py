@@ -31,6 +31,14 @@ from sourcing_intel_cli.chart_builder import (
 	render_echarts_html,
 	suggest_chart_type,
 )
+from sourcing_intel_cli.data_coverage import (
+	FIELD_LABELS,
+	example_questions,
+	mark_missing_values,
+	missing_share,
+	unavailable_columns,
+	unavailable_fields_mentioned,
+)
 from sourcing_intel_cli.data_quality import (
 	run_quality_checks,
 	write_quality_report,
@@ -303,13 +311,12 @@ def page_explorer() -> None:
 		st.info("This dataset is empty.")
 		return
 
-	# Used to make the example questions below reflect what's actually in
-	# this dataset instead of a hardcoded country that might not appear in
-	# it at all (e.g. a "wireless earbuds" scrape with no Chinese supplier).
-	present_countries = df["country_name"].dropna()
-	example_country = (
-		present_countries.value_counts().index[0] if not present_countries.empty else "China"
-	)
+	# Blank ratings (stored as 0) and an "unknown" verification status
+	# become real missing values, skipped by every average and chart instead
+	# of being counted as 0/5 — see data_coverage.py.
+	df = mark_missing_values(df)
+	unavailable = unavailable_columns(df)
+	blank_shares = missing_share(df)
 
 	st.download_button(
 		"⬇️ Download this dataset (CSV)",
@@ -318,6 +325,26 @@ def page_explorer() -> None:
 		mime="text/csv",
 		help="The raw dataset shown below — products joined to their supplier.",
 	)
+
+	if unavailable or blank_shares:
+		notes = []
+		if unavailable:
+			notes.append(
+				"**Not available in this dataset:** "
+				+ ", ".join(FIELD_LABELS[col] for col in unavailable)
+				+ " — the source doesn't provide them, so they're left out of "
+				"the charts and example questions."
+			)
+		if blank_shares:
+			notes.append(
+				"**Partly blank:** "
+				+ ", ".join(
+					f"{FIELD_LABELS[col]} ({share:.0%} of rows)" for col, share in blank_shares.items()
+				)
+				+ " — the site leaves some ratings empty; they're treated as "
+				"missing (not as 0), so they don't drag averages down."
+			)
+		st.info("ℹ️ " + "\n\n".join(notes))
 
 	tab_search, tab_charts = st.tabs(["💬 Natural-language search", "📊 Charts"])
 
@@ -332,37 +359,47 @@ def page_explorer() -> None:
 		)
 
 		with st.expander("📋 Available fields in the data"):
+			product_fields = {
+				"product_name": "full product name (sometimes long)",
+				"short_name": "shortened version, more readable in a table/chart",
+				"min_price": "lowest price of the range (USD)",
+				"max_price": "highest price of the range (USD)",
+				"minimum_to_order": "minimum order quantity (MOQ)",
+				"product_score": "product rating (out of 5)",
+				"review_count": "number of reviews",
+				"review_score": "average review rating (out of 5)",
+				"trade_product": "covered by Trade Assurance (true/false)",
+				"alibaba_guranteed": "covered by the marketplace's own guarantee (true/false)",
+				"certifications": "certifications the product holds",
+				"ordered_or_sold": "units already ordered/sold",
+				"shipping_time_score": "shipping speed rating",
+				"is_full_promotion": "on promotion (true/false)",
+				"is_customizable": "customizable (true/false)",
+				"is_instant_order": "can be ordered instantly (true/false)",
+			}
+			supplier_fields = {
+				"supplier_name": "supplier name",
+				"country_name": "supplier's country",
+				"sopi_level": "performance level (0 to 5)",
+				"years_as_gold_supplier": "years as a Gold Supplier",
+				"supplier_service_score": "service rating (out of 5)",
+				"verification_mode": "how the supplier was verified",
+			}
+
+			def _field_lines(fields: dict[str, str]) -> str:
+				lines = []
+				for name, description in fields.items():
+					if name in unavailable:
+						lines.append(f"- ~~`{name}`~~ — *not available in this dataset*")
+					else:
+						lines.append(f"- `{name}` — {description}")
+				return "\n".join(lines)
+
 			col_product, col_supplier = st.columns(2)
 			with col_product:
-				st.markdown(
-					"""
-					**Product**
-					- `product_name` — full product name (sometimes long)
-					- `short_name` — shortened version, more readable in a table/chart
-					- `min_price` / `max_price` — price range (USD)
-					- `minimum_to_order` — minimum order quantity (MOQ)
-					- `product_score` — product rating (out of 5)
-					- `review_count` / `review_score` — number of reviews and average rating
-					- `trade_product` — covered by Trade Assurance (true/false)
-					- `alibaba_guranteed` — covered by the marketplace's own guarantee (true/false)
-					- `certifications` — certifications the product holds
-					- `ordered_or_sold` — units already ordered/sold
-					- `shipping_time_score` — shipping speed rating
-					- `is_full_promotion` / `is_customizable` / `is_instant_order` — true/false flags
-					"""
-				)
+				st.markdown("**Product**\n\n" + _field_lines(product_fields))
 			with col_supplier:
-				st.markdown(
-					"""
-					**Supplier**
-					- `supplier_name` — supplier name
-					- `country_name` — supplier's country
-					- `sopi_level` — performance level (1 to 5)
-					- `years_as_gold_supplier` — years as a Gold Supplier
-					- `supplier_service_score` — service rating (out of 5)
-					- `verification_mode` — how the supplier was verified
-					"""
-				)
+				st.markdown("**Supplier**\n\n" + _field_lines(supplier_fields))
 			st.caption(
 				"Each row = one product linked to its supplier — you can combine "
 				"criteria from both sides in the same question."
@@ -372,17 +409,19 @@ def page_explorer() -> None:
 			"**Example questions to ask** — the chart in parentheses is the one "
 			"\"Auto\" actually picks for this phrasing (verified, not just indicative):"
 		)
+		# Only questions this dataset can really answer, filled with values
+		# present in it (most common country/certification).
 		st.markdown(
-			f"""
-			- *Which 5 suppliers have the best supplier_service_score?* (Bar)
-			- *What is the distribution of minimum prices?* (Histogram)
-			- *What is the spread of product_score by supplier country?* (Box plot)
-			- *Is there a correlation between product_score and min_price?* (Scatter)
-			- *Compare the average product price by supplier country.* (Bar)
-			- *What is the distribution of MOQ (minimum order quantity)?* (Histogram)
-			- *Which countries are represented among the suppliers?* (World map)
-			- *List suppliers in {example_country} with at least 5 years as a Gold Supplier, sorted by minimum price.* (Table — pick "Table only" from the menu, "Auto" doesn't detect this case and will show a bar chart by default)
-			"""
+			"\n".join(
+				f"- *{question}* ("
+				+ (
+					'Table — pick "Table only" from the menu, "Auto" shows a bar chart for this phrasing'
+					if chart == "Table"
+					else chart
+				)
+				+ ")"
+				for question, chart in example_questions(df, unavailable)
+			)
 		)
 
 		query = st.text_input(
@@ -438,6 +477,18 @@ def page_explorer() -> None:
 					)
 					st.stop()
 			st.session_state["nl_search_running"] = False
+
+			# The search silently drops a filter it can't apply, so without
+			# this, "verified suppliers" on a dataset with no verification
+			# data would list every supplier as if they had all been checked.
+			mentioned = unavailable_fields_mentioned(query, unavailable)
+			if mentioned:
+				st.warning(
+					"⚠️ This dataset has no "
+					+ ", ".join(FIELD_LABELS[col] for col in mentioned)
+					+ " — that part of your question can't be applied, so the "
+					"results below ignore it."
+				)
 
 			# A nonsense/off-topic question still gets syntactically valid
 			# JSON back from Groq (JSON mode guarantees that, not semantic
@@ -508,21 +559,28 @@ def page_explorer() -> None:
 			option_price = build_histogram_option(df, "min_price", "Distribution of minimum prices")
 			components.html(render_echarts_html(option_price, height="500px"), height=500)
 		with col2:
-			top_suppliers = (
-				df.groupby("supplier_name")["supplier_service_score"]
-				.mean()
-				.sort_values(ascending=False)
-				.head(10)
-				.reset_index()
-			)
-			option_suppliers = build_bar_option(
-				top_suppliers,
-				"supplier_name",
-				"supplier_service_score",
-				"Top 10 suppliers by service score",
-				horizontal=True,
-			)
-			components.html(render_echarts_html(option_suppliers, height="500px"), height=500)
+			if "supplier_service_score" in unavailable:
+				st.info(
+					"Top suppliers by service score: not available — this dataset "
+					"has no supplier service ratings."
+				)
+			else:
+				top_suppliers = (
+					df.dropna(subset=["supplier_service_score"])
+					.groupby("supplier_name")["supplier_service_score"]
+					.mean()
+					.sort_values(ascending=False)
+					.head(10)
+					.reset_index()
+				)
+				option_suppliers = build_bar_option(
+					top_suppliers,
+					"supplier_name",
+					"supplier_service_score",
+					"Top 10 suppliers by service score",
+					horizontal=True,
+				)
+				components.html(render_echarts_html(option_suppliers, height="500px"), height=500)
 
 		option_country = build_box_option(
 			df, "country_name", "min_price", "Price distribution by supplier country"
@@ -536,22 +594,45 @@ def page_explorer() -> None:
 			)
 			components.html(render_echarts_html(option_reliability, height="500px"), height=500)
 		with col4:
-			trade_coverage = (
-				df.groupby("country_name")["trade_product"]
-				.mean()
-				.mul(100)
-				.sort_values(ascending=False)
-				.head(10)
-				.reset_index()
-			)
-			option_trade = build_bar_option(
-				trade_coverage,
-				"country_name",
-				"trade_product",
-				"Trade Assurance coverage by country (%)",
-				horizontal=True,
-			)
-			components.html(render_echarts_html(option_trade, height="500px"), height=500)
+			# Trade Assurance isn't provided by live scrapes: an all-0% chart
+			# would read as "no supplier offers it". Product rating by
+			# country instead, when the dataset has it.
+			if "trade_product" not in unavailable:
+				trade_coverage = (
+					df.groupby("country_name")["trade_product"]
+					.mean()
+					.mul(100)
+					.sort_values(ascending=False)
+					.head(10)
+					.reset_index()
+				)
+				option_trade = build_bar_option(
+					trade_coverage,
+					"country_name",
+					"trade_product",
+					"Trade Assurance coverage by country (%)",
+					horizontal=True,
+				)
+				components.html(render_echarts_html(option_trade, height="500px"), height=500)
+			elif "product_score" not in unavailable:
+				score_by_country = (
+					df.dropna(subset=["product_score"])
+					.groupby("country_name")["product_score"]
+					.mean()
+					.sort_values(ascending=False)
+					.head(10)
+					.reset_index()
+				)
+				option_score = build_bar_option(
+					score_by_country,
+					"country_name",
+					"product_score",
+					"Average product rating by country",
+					horizontal=True,
+				)
+				components.html(render_echarts_html(option_score, height="500px"), height=500)
+			else:
+				st.info("Trade Assurance coverage: not available in this dataset.")
 
 		# One row per supplier, not per product — value_counts() in
 		# build_map_option would otherwise count a supplier once per product
@@ -592,7 +673,13 @@ def page_scraper() -> None:
 
 	st.subheader("2. Scrape")
 	keywords = st.text_input("Keywords", placeholder="e.g. wireless earbuds")
-	page_results = st.number_input("Number of pages", min_value=1, max_value=50, value=5)
+	page_results = st.number_input(
+		"Number of pages",
+		min_value=1,
+		max_value=50,
+		value=5,
+		help="Each page (about 40 products) costs 10 ScrapingBee credits.",
+	)
 
 	if not user_scrapingbee_key:
 		st.caption("⚠️ Enter your ScrapingBee key above to enable scraping.")
@@ -688,8 +775,9 @@ def page_aide() -> None:
 		2. Once logged in, your dashboard shows your API key at the
 		   top of the page, under **API Key** — copy it with the icon next to it.
 		3. The free plan includes a number of trial credits (check the
-		   exact amount on their pricing page, it can change) —
-		   plenty to test this app.
+		   exact amount on their pricing page, it can change). Each
+		   scraped page (about 40 products) costs **10 credits**, so 1,000
+		   free credits cover about 100 pages.
 		4. Come back to the **Scraper** page on this site and paste your key into the
 		   *"Your ScrapingBee key"* field — the *"Scrape live"* button
 		   stays disabled until you do.
@@ -731,8 +819,10 @@ def page_aide() -> None:
 		- *"the 5 best-rated suppliers in China"*
 		- *"products with a review score above 4.5 but fewer than 10
 		  reviews"* — high score, barely any votes, worth a second look
-		- *"suppliers in China with Trade Assurance"*
+		- *"suppliers in China with Trade Assurance"* (demo dataset only)
 		- *"products that support instant order and are customizable"*
+		  (demo dataset only — live searches don't include these fields;
+		  the **Explore** page lists what each dataset contains)
 		- *"the cheapest products with more than 100 units already sold"*
 
 		**Reading the charts** — a histogram shows a distribution

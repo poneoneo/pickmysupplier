@@ -112,7 +112,7 @@ def json_hunter(html_content: str | bytes, css_selector: str = ""):
 
 @logger.catch()
 def write_to_disk(folder_name: str, pages_contents: list[str]):
-	"""Save the content of each page as a separate HTML file in a folder named `folder_name`.
+	"""Save each page as a separate file (`.json` for search API responses, `.html` otherwise) in `folder_name`.
 
 	:param folder_name: The name of the folder where the HTML pages will be saved
 	:type folder_name: str
@@ -123,8 +123,10 @@ def write_to_disk(folder_name: str, pages_contents: list[str]):
 	logger.info("Saving your scrapping result in disk...")
 	path_obj = _create_folder(folder_name)
 	for page_number, content in enumerate(pages_contents):
+		# Search API responses are JSON; anything else is an HTML page.
+		extension = "json" if content.lstrip().startswith("{") else "html"
 		with open(
-			(path_obj / f"page_{page_number + 1}.html").resolve(),
+			(path_obj / f"page_{page_number + 1}.{extension}").resolve(),
 			"w",
 			encoding="utf-8",
 		) as file:
