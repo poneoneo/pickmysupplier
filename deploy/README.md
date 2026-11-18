@@ -34,7 +34,7 @@ peut aussi être relancé à la main (« Run workflow » sur *Deploy*).
 |---|---|
 | `Dockerfile` | Image de l'app (Python épinglé, utilisateur non-root, healthcheck) |
 | `deploy/docker-compose.yml` | App + Caddy, redémarrage automatique |
-| `deploy/Caddyfile` | HTTPS + reverse proxy (websockets inclus) |
+| `deploy/caddy/Caddyfile` | HTTPS + reverse proxy (websockets inclus) |
 | `deploy/.env.example` | Modèle du `deploy/.env` du serveur (jamais committé) |
 | `deploy/setup-server.sh` | Préparation initiale du VPS (une seule fois) |
 | `deploy/deploy.sh` | Mise à jour, lancée par la GitHub Action |
