@@ -1,0 +1,30 @@
+# Secrets : jamais dans l'image (ils arrivent par deploy/.env au lancement).
+.env
+**/.env
+
+# Données locales / générées
+sessions/
+scraped_pages/
+*.sqlite
+logs/
+*.log
+data_quality_report.json
+screenshots/
+
+# Outillage de dev
+.git/
+.github/
+.claude/
+.superpowers/
+graphify-out/
+tests/
+docs/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.json
+htmlcov/
+.venv/

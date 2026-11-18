@@ -1,0 +1,46 @@
+name: Deploy
+
+# Déploie sur le VPS après chaque CI verte sur main (push, merge de PR).
+# Une CI rouge ne déclenche rien : le site garde la dernière version qui marche.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Jamais deux déploiements en même temps ; le plus récent attend son tour.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: 🚀 Déploiement
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 🚀 Mise à jour du serveur
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$DEPLOY_HOST" ]; then
+            echo "Secrets de déploiement absents : rien à déployer (serveur pas encore configuré)."
+            exit 0
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # La clé est restreinte côté serveur à deploy/deploy.sh : aucune
+          # commande n'est passée ici, le serveur sait déjà quoi lancer.
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "deploy@${DEPLOY_HOST}"
