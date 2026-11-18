@@ -380,6 +380,25 @@ le numéro, relancer `python -m pytest`, puis commit.
   tentative JS est bloquée par le sandbox des iframes Streamlit — le bouton
   est le chemin fiable, et cette adresse continue de se mettre en veille.
 
+- **Scraping live réparé le 2026-11-18** (PR #39 + PR suivante) — les
+  visiteurs vidaient leurs crédits ScrapingBee sans rien obtenir. Mesuré
+  avec de vrais appels : (1) en proxy premium + JS, le site cible renvoyait
+  une page captcha 3 fois sur 3, facturée 25 crédits comme une vraie page
+  (HTTP 200) ; (2) ScrapingBee répond 401 (pas 429) quand le quota mensuel
+  est épuisé, et l'app disait alors « clé invalide » ; (3) même sur une page
+  non bloquée, le site n'embarque plus le JSON
+  `window.__page__data_sse*._offer_list` — les résultats ne sont plus que
+  dans le HTML des cartes `.fy26-product-card`, donc 0 produit parsé.
+  Correctifs : arrêt dès le premier captcha (`TargetSiteBlockedError`),
+  `ScrapingBeeKeyError.reason` (`quota`/`invalid`), proxy **stealth**
+  (75 crédits/page, seul mode mesuré qui passe le captcha, prix en USD),
+  1 page par défaut au lieu de 5, et `utils_scrapping.card_to_offer` qui
+  reconstruit les offres depuis les cartes quand le JSON est absent (le
+  JSON reste préféré s'il revient). Les scores produit/livraison/service
+  fournisseur et les noms de certifications ne sont plus affichés sur les
+  cartes : valeurs neutres (0.0 / ""), jamais devinées. Le mode sans JS a
+  été testé et écarté : la page sans JS ne contient aucun résultat.
+
 ## Prochaines étapes possibles (non commencées)
 
 - Commitizen (version bump + changelog automatique) et packaging pipx —

@@ -3,6 +3,7 @@ import pathlib
 import re
 import unicodedata
 from typing import Literal
+from urllib.parse import unquote
 
 from loguru import logger
 from selectolax.lexbor import LexborHTMLParser, LexborNode
@@ -382,3 +383,91 @@ def country_name(country_min: str):
 	:rtype: str
 	"""
 	return _from_abr_to_full_name(country_abr=country_min)
+
+
+_AREA_CONTENT = re.compile(r"areaContent=([^&]*)")
+
+
+def _area_content(node: LexborNode | None) -> str | None:
+	"""Read the `areaContent=` value of a card element's tracking attribute.
+
+	The 2026-11 result cards expose several values only there, e.g.
+	``data-aplus-auto-card-mod="area=review&areaContent=4.9@@121&target=detail"``.
+
+	:param node: A card sub-element, or None if the card doesn't have it.
+	:type node: LexborNode | None
+	:return: The URL-decoded `areaContent` value, or None if absent.
+	:rtype: str | None
+	"""
+	if node is None:
+		return None
+	match = _AREA_CONTENT.search(node.attributes.get("data-aplus-auto-card-mod") or "")
+	return unquote(match.group(1)) if match else None
+
+
+def _node_text(node: LexborNode | None) -> str | None:
+	"""Whitespace-normalized text of `node`, or None if it's missing or empty."""
+	if node is None:
+		return None
+	text = " ".join(node.text().split())
+	return text or None
+
+
+def card_to_offer(card: LexborNode) -> dict | None:
+	"""Turn one `.fy26-product-card` element into an offer dict.
+
+	Since 2026-11 the results page no longer embeds the
+	`window.__page__data_sse*._offer_list` JSON: results only exist as card
+	HTML. This rebuilds the same keys the JSON offers had, so
+	`PageParser`'s appenders and the data quality checks are reused as is.
+	Values the cards no longer show (product, shipping and supplier service
+	scores, certification names — the latter are images without text) get
+	neutral defaults (0.0 / no certification) rather than guesses, like
+	the boolean fields that disappeared earlier.
+
+	:param card: A `.fy26-product-card` node.
+	:type card: LexborNode
+	:return: An offer dict, or None if the card lacks a title, a supplier
+		name, or a price (nothing usable to store).
+	:rtype: dict | None
+	"""
+	title = _node_text(card.css_first(".searchx-product-e-title"))
+	company = _node_text(card.css_first("a[data-spm='d_companyName']"))
+	price = _node_text(card.css_first(".searchx-product-price-price-main"))
+	if not (title and company and price):
+		return None
+
+	offer: dict = {
+		"title": title,
+		"companyName": company,
+		"price": price,
+		"moq": _node_text(card.css_first(".searchx-moq")) or "",
+		"soldOrder": _node_text(card.css_first(".searchx-sold-order")),
+		"certifications": [],
+		"productScore": 0.0,
+		"shippingScore": 0.0,
+		"supplierServiceScore": 0.0,
+		"reviewScore": 0.0,
+		"reviewCount": 0.0,
+		"displayStarLevel": 0,
+	}
+
+	review = _area_content(card.css_first(".searchx-product-e-review"))
+	if review and "@@" in review:
+		score, count = review.split("@@", 1)
+		offer["reviewScore"] = safe_float(score)
+		offer["reviewCount"] = safe_float(count)
+
+	stars = _area_content(card.css_first(".searchx-product-e-star"))
+	if stars and stars.isdigit():
+		offer["displayStarLevel"] = int(stars)
+
+	# "CN@@6 yrs": country code, then years on the platform. Left out when
+	# absent, so the supplier is skipped instead of stored with a made-up
+	# country (its products are then rejected by the quality checks).
+	supplier_year = _area_content(card.css_first(".searchx-product-e-supplier__year"))
+	if supplier_year and "@@" in supplier_year:
+		country, years = supplier_year.split("@@", 1)
+		offer["countryCode"] = country
+		offer["goldSupplierYears"] = years
+	return offer

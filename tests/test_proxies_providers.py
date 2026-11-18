@@ -56,11 +56,15 @@ class TestFetchViaScrapingbee:
 		_fetch_via_scrapingbee(stub, "https://endpoint.example", "my-key", "https://target.example")
 		assert stub.last_params["api_key"] == "my-key"
 
-	def test_pins_country_and_premium_proxy(self):
+	def test_pins_country_and_stealth_proxy(self):
+		# Measured 2026-11-18: premium proxy + JS got the target site's
+		# captcha 3 times out of 3; stealth proxy got the real results page.
 		stub = _StubAPIRequest(_StubResponse(200))
 		_fetch_via_scrapingbee(stub, "https://endpoint.example", "my-key", "https://target.example")
 		assert stub.last_params["country_code"] == TARGET_COUNTRY
-		assert stub.last_params["premium_proxy"] == "true"
+		assert stub.last_params["stealth_proxy"] == "true"
+		assert stub.last_params["render_js"] == "true"
+		assert "premium_proxy" not in stub.last_params
 
 	def test_429_raises_key_error(self):
 		# Quota exceeded on an otherwise-valid key.

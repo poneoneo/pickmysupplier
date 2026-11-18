@@ -16,6 +16,7 @@ from sourcing_intel_cli.typed_datas import ProductDict, SupplierDict
 
 from .html_to_disk import json_hunter
 from .utils_scrapping import (
+	card_to_offer,
 	clean_product_title,
 	country_name,
 	get_product_certification,
@@ -74,33 +75,36 @@ class PageParser:
 
 	def _divs_and_dict(self, selector: str = ".fy26-product-card"):
 		"""
-		Retrieves the div tags that match the given selector and a dictionary of parsed content from the html file
-		containing the div tag.
+		For each saved page, return its product card nodes and its list of offers.
 
-		:param selector: The css selector to retrieve the div tags.
+		Offers come from the page's embedded `_offer_list` JSON when it has
+		one (the richer source: it carries scores the cards don't show).
+		Since 2026-11 the site no longer embeds it and results only exist
+		as card HTML — the offers are then rebuilt from the cards with
+		`utils_scrapping.card_to_offer`, under the same keys, so both
+		appenders work unchanged. Cards that can't be read are skipped.
+
+		:param selector: The css selector of a product card.
 		:type selector: str
-		:return: A list of tuples containing the div tag and its corresponding parsed content.
-		:rtype: List[Tuple[selectolax.Selector, Dict]]
+		:return: One `(card nodes, offers)` tuple per page; pages with no
+			offers at all are left out.
+		:rtype: List[Tuple[List[LexborNode], List[dict]]]
 		"""
 		logger.info(f"Retrieving  div tags with class='{selector}' ...")
-		divs_and_dict = [
-			(
-				LexborHTMLParser(self._retrieve_html_content_as_string(html_file)).css(selector),
-				json_hunter(
-					self._retrieve_html_content_as_string(html_file),
-					css_selector="div[id='root']",
-				),
-			)
-			for html_file in self._html_files_explorer()
-		]
-		logger.info("All expected divs and dict has been retrived ...")
-
-		new_divs_and_dict = []
-		for item in divs_and_dict:
-			if item[1] is None or item[1] == "":
-				continue
-			new_divs_and_dict.append((item[0], json.loads(item[1])))  # type: ignore
-		return new_divs_and_dict
+		pages = []
+		for html_file in self._html_files_explorer():
+			html = self._retrieve_html_content_as_string(html_file)
+			divs = LexborHTMLParser(html).css(selector)
+			raw_json = json_hunter(html, css_selector="div[id='root']")
+			offers = []
+			if raw_json:
+				offers = json.loads(raw_json).get("offerResultData", {}).get("offers", [])
+			if not offers:
+				offers = [offer for offer in map(card_to_offer, divs) if offer is not None]
+			if offers:
+				pages.append((divs, offers))
+		logger.info("All expected divs and offers have been retrieved ...")
+		return pages
 
 	def _suppliers_appender(self, offers_list: Sequence[dict], suppliers: list, divs: list[LexborNode]):
 		"""Parse each offer into a supplier dict, skipping any offer that fails to parse.
@@ -143,11 +147,8 @@ class PageParser:
 				description="[blank]Parsing suppliers ...[/blank]",
 			)
 			for divs, offers in divs_and_dict:
-				offers_values = offers.get("offerResultData", {}).get("offers", [])
-				if not offers_values:
-					continue
 				self._suppliers_appender(
-					offers_list=offers_values, suppliers=suppliers, divs=divs
+					offers_list=offers, suppliers=suppliers, divs=divs
 				)
 				progress.update(all_pages_task, advance=100 / len(divs_and_dict))
 		# removing supliers present twice in supliers dict
@@ -205,10 +206,7 @@ class PageParser:
 		) as progress:
 			all_pages_task = progress.add_task(description="[blank]Parsing products ...[/blank]")
 			for divs, offers in divs_and_dict:
-				offers_values = offers.get("offerResultData", {}).get("offers", [])
-				if not offers_values:
-					continue
-				self._produtcs_appender(offers_list=offers_values, products=products)
+				self._produtcs_appender(offers_list=offers, products=products)
 				progress.update(all_pages_task, advance=100 / len(divs_and_dict))
 		# removing products present twice in products list
 		unique_products_tuple = list(OrderedDict((str(d), d) for d in products).items())

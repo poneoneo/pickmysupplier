@@ -592,7 +592,16 @@ def page_scraper() -> None:
 
 	st.subheader("2. Scrape")
 	keywords = st.text_input("Keywords", placeholder="e.g. wireless earbuds")
-	page_results = st.number_input("Number of pages", min_value=1, max_value=50, value=5)
+	page_results = st.number_input(
+		"Number of pages",
+		min_value=1,
+		max_value=50,
+		value=1,
+		help=(
+			"Each page (about 60 products) costs 75 ScrapingBee credits: the "
+			"marketplace blocks cheaper proxies with a captcha."
+		),
+	)
 
 	if not user_scrapingbee_key:
 		st.caption("⚠️ Enter your ScrapingBee key above to enable scraping.")
@@ -688,8 +697,9 @@ def page_aide() -> None:
 		2. Once logged in, your dashboard shows your API key at the
 		   top of the page, under **API Key** — copy it with the icon next to it.
 		3. The free plan includes a number of trial credits (check the
-		   exact amount on their pricing page, it can change) —
-		   plenty to test this app.
+		   exact amount on their pricing page, it can change). Each
+		   scraped page (about 60 products) costs **75 credits**, so 1,000
+		   free credits cover about 13 pages — start with 1 page per search.
 		4. Come back to the **Scraper** page on this site and paste your key into the
 		   *"Your ScrapingBee key"* field — the *"Scrape live"* button
 		   stays disabled until you do.

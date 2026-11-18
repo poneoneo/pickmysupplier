@@ -122,7 +122,11 @@ def _fetch_via_scrapingbee(api_request, endpoint: str, api_key: str, url: str):
 			"api_key": api_key,
 			"url": url,
 			"render_js": "true",
-			"premium_proxy": "true",
+			# Stealth, not premium: measured 2026-11-18, premium + JS got the
+			# target site's captcha 3/3 (25 credits each, for nothing) while
+			# stealth got the real results page, priced in USD. It costs 75
+			# credits per page, hence the 1-page default on the Scraper page.
+			"stealth_proxy": "true",
 			"country_code": TARGET_COUNTRY,
 		},
 		timeout=0,
